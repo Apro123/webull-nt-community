@@ -81,6 +81,7 @@ NETWORK_PACKAGE_FEATURES = {
     "nautilus-polymarket": frozenset({"transport-sockudo"}),
     "nautilus-pyo3": frozenset({"python", "transport-sockudo"}),
     "nautilus-tardis": frozenset(),
+    "nautilus-webull": frozenset(),
     "nautilus-testkit": frozenset(),
 }
 

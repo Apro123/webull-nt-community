@@ -6767,6 +6767,7 @@ dependencies = [
  "nautilus-tardis",
  "nautilus-testkit",
  "nautilus-trading",
+ "nautilus-webull",
  "pyo3",
  "pyo3-stub-gen",
 ]
@@ -7024,6 +7025,35 @@ dependencies = [
  "nautilus-model",
  "nautilus-trading",
  "tokio",
+]
+
+[[package]]
+name = "nautilus-webull"
+version = "0.64.0"
+dependencies = [
+ "ahash",
+ "anyhow",
+ "base64 0.23.1",
+ "hmac 0.12.1",
+ "jiff",
+ "log",
+ "md-5 0.10.6",
+ "nautilus-core",
+ "nautilus-model",
+ "nautilus-network",
+ "pyo3",
+ "pyo3-async-runtimes",
+ "pyo3-stub-gen",
+ "rstest",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "sha1 0.10.7",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "ustr",
+ "zeroize",
 ]
 
 [[package]]

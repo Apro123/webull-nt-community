@@ -20,6 +20,7 @@ from . import okx
 from . import polymarket
 from . import sandbox
 from . import tardis
+from . import webull
 
 __all__ = [
     "architect_ax",
@@ -41,4 +42,5 @@ __all__ = [
     "polymarket",
     "sandbox",
     "tardis",
+    "webull",
 ]

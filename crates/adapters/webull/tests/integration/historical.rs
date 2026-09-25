@@ -112,8 +112,12 @@ fn test_get_history_bars_pages_backwards_to_start() {
     }
 
     // Second request walks backwards from the oldest page-1 bar.
-    let first_request = requests.recv().expect("first request");
-    let second_request = requests.recv().expect("second request");
+    let first_request = requests
+        .recv_timeout(Duration::from_secs(5))
+        .expect("first request");
+    let second_request = requests
+        .recv_timeout(Duration::from_secs(5))
+        .expect("second request");
     assert!(first_request.contains(&format!("end_time={END_MS}")));
     assert!(second_request.contains(&format!("end_time={}", END_MS - 199 * STEP_MS - 1)));
     assert!(requests.try_recv().is_err(), "no further requests");
@@ -142,7 +146,9 @@ fn test_get_history_bars_stops_when_page_reaches_start() {
     .expect("fetches bars");
 
     assert_eq!(bars.len(), 2);
-    let request = requests.recv().expect("request captured");
+    let request = requests
+        .recv_timeout(Duration::from_secs(5))
+        .expect("request captured");
     assert!(request.contains("trading_sessions=PRE%2CRTH%2CATH"));
     assert!(requests.try_recv().is_err(), "no further requests");
 }
@@ -165,8 +171,12 @@ fn test_get_history_bars_walks_past_short_page_to_empty() {
     .expect("fetches bars");
 
     assert_eq!(bars.len(), 2);
-    requests.recv().expect("first request");
-    requests.recv().expect("walk continues past a short page");
+    requests
+        .recv_timeout(Duration::from_secs(5))
+        .expect("first request");
+    requests
+        .recv_timeout(Duration::from_secs(5))
+        .expect("walk continues past a short page");
     assert!(requests.try_recv().is_err(), "an empty page stops the walk");
 }
 

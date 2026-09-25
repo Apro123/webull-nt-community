@@ -159,8 +159,8 @@ than a page are paged automatically):
 - The client's per-minute quota matches the venue's 60 requests/minute
   production limit. At the script's default sessions (`PRE,RTH,ATH`), a
   full year is ~240,000 M1 bars (~1,200 requests, ~20 minutes) or ~48,000
-  M5 bars (~250 requests, ~4 minutes); an RTH-only year is a quarter of
-  that (~97,500 M1 / ~19,500 M5 bars). All are small for the backtest
+  M5 bars (~250 requests, ~4 minutes); an RTH-only year is about two-fifths
+  of that (~97,500 M1 / ~19,500 M5 bars). All are small for the backtest
   engine.
 
 Each day's `write_bars` lands in its own Parquet file. A multi-day backtest

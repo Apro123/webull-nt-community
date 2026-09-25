@@ -98,6 +98,19 @@ The following adapters are maintained in the core repository:
 | Polymarket          | Data/Execution |
 | Tardis              | Data           |
 
+## Adapters added in this fork
+
+The tables above describe the official upstream project. This repository is an independent
+community fork, and adapters introduced by this fork are not official:
+
+| Adapter | Type | Notes                                  |
+| ------- | ---- | -------------------------------------- |
+| Webull  | Data | Beta; US stocks/ETFs market data only. |
+
+The Webull adapter is maintained in this repository. It is not affiliated with, endorsed by, or
+supported by Nautech Systems Pty Ltd or the official NautilusTrader project, and it is not an
+official Webull product. See the [guide](docs/integrations/webull.md).
+
 ## Community listings
 
 Community adapters listed here met the listing criteria at the time of review.

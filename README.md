@@ -1,5 +1,36 @@
 # <img src="https://github.com/nautechsystems/nautilus_trader/raw/develop/assets/nautilus-trader-logo.png" alt="NautilusTrader" width="500">
 
+> [!IMPORTANT]
+> **webull-nt-community** is a public fork of
+> [nautilus_trader](https://github.com/nautechsystems/nautilus_trader). This is an independent
+> community project. It is not affiliated with, endorsed by, or supported by Nautech Systems
+> Pty Ltd or the official NautilusTrader project. Questions about this fork's additions should
+> be raised here, not with the upstream maintainers.
+
+## What this fork adds
+
+This fork's purpose is a **Webull market data adapter** for US stocks/ETFs. Added so far:
+
+- `crates/adapters/webull` - an unofficial Rust adapter for the Webull OpenAPI market data
+  endpoints: signed REST requests (HMAC-SHA1 app key/secret, optional 2FA access token), live
+  quote snapshots, recent trade ticks, and paged historical bars (1m-1M timespans), with
+  [documentation](docs/integrations/webull.md).
+- Python bindings - `nautilus_trader.adapters.webull.WebullHistoricalClient`.
+- [`scripts/webull_bulk_download.py`](scripts/webull_bulk_download.py) - bulk historical bar
+  download into a Parquet catalog, and a stock backtest example
+  ([`examples/backtest/equity_ema_cross_aapl_webull.py`](examples/backtest/equity_ema_cross_aapl_webull.py)).
+
+Scope: **stocks/ETFs market data only** for now. The Webull trade (execution) API, options and
+other product categories, and streaming market data are not implemented yet, even though the
+provider documents them: [Market Data API](https://developer.webull.com/apis/docs/market-data-api/overview),
+[Trade API](https://developer.webull.com/apis/docs/trade-api/overview).
+
+Credentials are read from the environment only (`WEBULL_API_KEY`, `WEBULL_API_SECRET`,
+`WEBULL_ACCESS_TOKEN`) - never commit or paste them; a git-ignored `.env` file is a convenient
+place to keep them.
+
+All other code is upstream NautilusTrader, unchanged.
+
 [![rustc](https://img.shields.io/crates/msrv/nautilus-core?color=ea7233&logo=rust&label=rustc)](https://crates.io/crates/nautilus-core)
 [![crates.io](https://img.shields.io/crates/v/nautilus-core?logo=rust)](https://crates.io/crates/nautilus-core)
 [![codspeed](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json)](https://codspeed.io/nautechsystems/nautilus_trader)
@@ -124,9 +155,13 @@ The following integrations are currently supported; see [docs/integrations/](htt
 | [OKX](https://okx.com)                                     | `OKX`                 | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green) | [Guide](docs/integrations/okx.md)                 |
 | [Polymarket](https://polymarket.com)                       | `POLYMARKET`          | Prediction Market (DEX) | ![status](https://img.shields.io/badge/stable-green) | [Guide](docs/integrations/polymarket.md)          |
 | [Tardis](https://tardis.dev)                               | `TARDIS`              | Crypto Data Provider    | ![status](https://img.shields.io/badge/stable-green) | [Guide](docs/integrations/tardis.md)              |
+| [Webull](https://webull.com)\*                             | `WEBULL`              | Equity Data Provider    | ![status](https://img.shields.io/badge/beta-orange)  | [Guide](docs/integrations/webull.md)              |
 
 - **ID**: The default client ID for the integrations adapter clients.
 - **Type**: The type of integration (often the venue type).
+
+\* The Webull adapter is added by this community fork; it is not an official NautilusTrader
+integration.
 
 For Lighter on Robinhood, `LIGHTER_ROBINHOOD` is the venue and explicit client ID to register. The
 shared Lighter factory keeps `LIGHTER` as its compatibility default.

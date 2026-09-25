@@ -29,7 +29,7 @@ any backtest script and call ``ensure_webull_bars`` before loading data, so
 the script downloads what it needs and otherwise reads the catalog.
 
 Requires the WEBULL_API_KEY, WEBULL_API_SECRET, and WEBULL_ACCESS_TOKEN
-environment variables (see the "Webull" section of the README).
+environment variables (see docs/integrations/webull_data.md).
 
 """
 

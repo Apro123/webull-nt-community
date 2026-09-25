@@ -81,6 +81,21 @@ export WEBULL_ACCESS_TOKEN=...
 python examples/backtest/equity_ema_cross_aapl_webull.py
 ```
 
+## Sandbox
+
+Webull publishes a test environment at `api.sandbox.webull.com`. Live smoke
+tests against it are in
+[`python/tests/integration/adapters/webull/test_webull_sandbox.py`](https://github.com/Apro123/webull-nt-community/blob/master/python/tests/integration/adapters/webull/test_webull_sandbox.py);
+they skip unless sandbox app credentials are in the environment:
+
+```bash
+WEBULL_API_KEY=... WEBULL_API_SECRET=... \
+uv run --project python pytest python/tests/integration/adapters/webull -v
+```
+
+Each call is retried up to three times with exponential backoff (the sandbox
+is shared and intermittently unavailable).
+
 ## Limitations
 
 - Data provider only; execution is not supported yet.

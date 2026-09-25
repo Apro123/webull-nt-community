@@ -72,4 +72,3 @@ pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
 rstest = { workspace = true }
-tempfile = { workspace = true }

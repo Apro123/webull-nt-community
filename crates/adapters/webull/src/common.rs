@@ -13,11 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Webull adapter constants, credential storage, and token file handling.
+//! Webull adapter constants and credential storage.
 
-use std::{fmt::Debug, num::NonZeroU32, path::Path, sync::LazyLock};
+use std::{fmt::Debug, num::NonZeroU32, sync::LazyLock};
 
-use nautilus_core::{env::get_or_env_var_opt, string::secret::REDACTED};
+use nautilus_core::string::secret::REDACTED;
 use nautilus_model::identifiers::ClientId;
 use nautilus_network::ratelimiter::quota::Quota;
 use ustr::Ustr;
@@ -34,15 +34,6 @@ pub static WEBULL_VENUE: LazyLock<nautilus_model::identifiers::Venue> =
 pub static WEBULL_CLIENT_ID: LazyLock<ClientId> =
     LazyLock::new(|| ClientId::new(Ustr::from(WEBULL)));
 
-/// Environment variable name for the Webull API key.
-pub const WEBULL_API_KEY: &str = "WEBULL_API_KEY";
-
-/// Environment variable name for the Webull API secret.
-pub const WEBULL_API_SECRET: &str = "WEBULL_API_SECRET";
-
-/// Environment variable name for the Webull access token (2FA token).
-pub const WEBULL_ACCESS_TOKEN: &str = "WEBULL_ACCESS_TOKEN";
-
 /// Default Webull OpenAPI base URL (production, US region).
 pub const WEBULL_HTTP_BASE_URL: &str = "https://api.webull.com";
 
@@ -52,9 +43,10 @@ pub const WEBULL_HTTP_HOST: &str = "api.webull.com";
 /// Rate limit key for Webull OpenAPI requests.
 pub const WEBULL_REST_RATE_KEY: &str = "webull_rest";
 
-/// Rate limit for the Webull Market Data API (300 requests per minute).
+/// Rate limit for the Webull Market Data API (production tier: 60 requests
+/// per minute per app key; the sandbox tier is lower).
 pub static WEBULL_REST_QUOTA: LazyLock<Quota> =
-    LazyLock::new(|| Quota::per_minute(NonZeroU32::new(300).expect("non-zero")));
+    LazyLock::new(|| Quota::per_minute(NonZeroU32::new(60).expect("non-zero")));
 
 /// Webull API credentials: the public app key, the HMAC signing secret,
 /// and the account access token (issued by the 2FA token flow).
@@ -133,80 +125,11 @@ impl Credential {
     pub fn api_key_masked(&self) -> String {
         nautilus_core::string::secret::mask_api_key(self.api_key())
     }
-
-    /// Resolves a credential from the provided values or the `WEBULL_API_KEY`,
-    /// `WEBULL_API_SECRET`, and `WEBULL_ACCESS_TOKEN` environment variables.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the API key or API secret cannot be resolved.
-    pub fn resolve(
-        api_key: Option<String>,
-        api_secret: Option<String>,
-        access_token: Option<String>,
-    ) -> anyhow::Result<Self> {
-        let api_key = get_or_env_var_opt(api_key, WEBULL_API_KEY).ok_or_else(|| {
-            anyhow::anyhow!(
-                "API key must be provided or set in the '{WEBULL_API_KEY}' environment variable"
-            )
-        })?;
-        let api_secret = get_or_env_var_opt(api_secret, WEBULL_API_SECRET)
-            .ok_or_else(|| anyhow::anyhow!("API secret must be provided or set in the '{WEBULL_API_SECRET}' environment variable"))?;
-
-        Ok(Self::new(api_key, api_secret, access_token))
-    }
-}
-
-/// An access token entry as persisted by the Webull OpenAPI SDK token flow.
-///
-/// The SDK writes a three-line file: the token, its expiry as a millisecond
-/// Unix timestamp, and its state (`PENDING`, `NORMAL`, `INVALID`).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AccessTokenFile {
-    /// The account access token.
-    pub token: String,
-    /// Token expiry as a millisecond Unix timestamp.
-    pub expiry_ms: u64,
-    /// Token state as reported by the API.
-    pub state: String,
-}
-
-impl AccessTokenFile {
-    /// Reads and parses an SDK-style token file.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the file cannot be read or does not contain
-    /// the expected three-line format.
-    pub fn read(path: &Path) -> std::io::Result<Self> {
-        let content = std::fs::read_to_string(path)?;
-        let mut lines = content
-            .lines()
-            .map(str::trim)
-            .filter(|line| !line.is_empty());
-        let (Some(token), Some(expiry), Some(state)) = (lines.next(), lines.next(), lines.next())
-        else {
-            return Err(std::io::Error::other(
-                "token file must contain three lines: token, expiry, state",
-            ));
-        };
-
-        Ok(Self {
-            token: token.to_string(),
-            expiry_ms: expiry.parse().map_err(|_| {
-                std::io::Error::other("token expiry is not a millisecond timestamp")
-            })?,
-            state: state.to_string(),
-        })
-    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
     use rstest::rstest;
-    use tempfile::tempdir;
 
     use super::*;
 
@@ -242,50 +165,5 @@ mod tests {
         assert!(debug_str.contains("abcd...7890"));
         assert!(!debug_str.contains("the-api-secret"));
         assert!(!debug_str.contains("the-access-token"));
-    }
-
-    #[rstest]
-    fn test_credential_resolve_missing_key() {
-        assert!(Credential::resolve(None, Some("secret".to_string()), None).is_err());
-    }
-
-    #[rstest]
-    fn test_credential_resolve_missing_secret() {
-        assert!(Credential::resolve(Some("key".to_string()), None, None).is_err());
-    }
-
-    #[rstest]
-    fn test_credential_resolve_explicit_values() {
-        let credential = Credential::resolve(
-            Some("key".to_string()),
-            Some("secret".to_string()),
-            Some("token".to_string()),
-        )
-        .expect("credential resolves");
-
-        assert_eq!(credential.api_key(), "key");
-        assert_eq!(credential.api_secret(), "secret");
-        assert_eq!(credential.access_token(), Some("token"));
-    }
-
-    #[rstest]
-    fn test_access_token_file_read() {
-        let dir = tempdir().expect("tempdir");
-        let path: PathBuf = dir.path().join("token.txt");
-        std::fs::write(&path, "test-token-value\n1750000000000\nNORMAL\n").expect("write");
-
-        let entry = AccessTokenFile::read(&path).expect("reads token file");
-        assert_eq!(entry.token, "test-token-value");
-        assert_eq!(entry.expiry_ms, 1_750_000_000_000);
-        assert_eq!(entry.state, "NORMAL");
-    }
-
-    #[rstest]
-    fn test_access_token_file_read_malformed() {
-        let dir = tempdir().expect("tempdir");
-        let path: PathBuf = dir.path().join("token.txt");
-        std::fs::write(&path, "only-one-line\n").expect("write");
-
-        assert!(AccessTokenFile::read(&path).is_err());
     }
 }

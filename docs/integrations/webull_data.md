@@ -32,8 +32,8 @@ All three are coroutines (`await`).
   venue default.
 - The venue reports prices and volumes as strings; the client normalizes them
   to `Price` (at the given precision) and `Quantity`.
-- The rate limit is 300 requests/minute; the client applies a per-minute
-  quota and retries once on 429.
+- The rate limit is 60 requests/minute (production tier); the client applies
+  a per-minute quota and retries once on 429.
 - History depth and session availability are subject to the venue's data
   terms; for some accounts M5 bars lag real time by a few days.
 
@@ -149,15 +149,18 @@ python/.venv/bin/python scripts/webull_bulk_download.py \
     --symbol AAPL --timespan M1 --start 2025-09-08 --end 2026-09-04
 ```
 
-For 1-minute bars, each day is small enough to download in one request:
+Bar counts per day (the venue caps a response at 200 bars, so days larger
+than a page are paged automatically):
 
-- Regular hours are 78 M1 bars per day, under the 200-bar page limit, so each
-  day is a single API request with no paging.
-- With `trading_sessions="PRE,RTH,ATH"` a day is about 192 bars, still one
-  request.
-- At the 300 requests/minute limit, a full year downloads in well under a
-  minute; a year of M1 bars is about 19,500 bars, which is small for the
-  backtest engine.
+- Regular hours are 390 M1 bars per day (about 2 requests), or 78 M5 bars
+  (1 request).
+- With `trading_sessions="PRE,RTH,ATH"` a day is about 960 M1 bars
+  (~5 requests) or 192 M5 bars (1 request).
+- The client's per-minute quota matches the venue's 60 requests/minute
+  production limit, so a full year of M1 bars (~97,500 bars, ~500 requests)
+  downloads in roughly 10 minutes, while a year of M5 bars (~19,500 bars,
+  ~100 requests) takes under 2 minutes. Both are small for the backtest
+  engine.
 
 Each day's `write_bars` lands in its own Parquet file. A multi-day backtest
 reads only the files for the requested range, merges them in time order, and

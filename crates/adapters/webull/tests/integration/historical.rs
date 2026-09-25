@@ -83,7 +83,7 @@ fn tokio_test_block_on<T: Send + 'static>(
 fn test_get_history_bars_pages_backwards_to_start() {
     // Page 1: 200 bars (full page) ending at END_MS.
     let page1: Vec<u64> = (0..200).map(|i| END_MS - i * STEP_MS).collect();
-    // Page 2: 150 bars (short page = data wall) continuing backwards.
+    // Page 2: 150 bars continuing backwards, oldest reaching start_ms.
     let page2: Vec<u64> = (0..150).map(|i| END_MS - (200 + i) * STEP_MS).collect();
     let start_ms = *page2.last().expect("page has bars");
 
@@ -120,7 +120,7 @@ fn test_get_history_bars_pages_backwards_to_start() {
 }
 
 #[test]
-fn test_get_history_bars_stops_on_short_page() {
+fn test_get_history_bars_stops_when_page_reaches_start() {
     let page: Vec<u64> = (0..2).map(|i| END_MS - i * STEP_MS).collect();
     let start_ms = *page.last().expect("page has bars");
 
@@ -144,7 +144,30 @@ fn test_get_history_bars_stops_on_short_page() {
     assert_eq!(bars.len(), 2);
     let request = requests.recv().expect("request captured");
     assert!(request.contains("trading_sessions=PRE%2CRTH%2CATH"));
-    assert!(requests.try_recv().is_err(), "a short page stops the walk");
+    assert!(requests.try_recv().is_err(), "no further requests");
+}
+
+#[test]
+fn test_get_history_bars_walks_past_short_page_to_empty() {
+    // A short page reflects the venue page cap, not the data wall: the walk
+    // must continue one page further back and stop on the empty page.
+    let page: Vec<u64> = (0..2).map(|i| END_MS - i * STEP_MS).collect();
+    let start_ms = END_MS - 1_000 * STEP_MS; // far below the page's oldest bar
+
+    let (client, requests) = mock_client(vec![(200, page_json(&page)), (200, String::from("[]"))]);
+    let historical = WebullHistoricalClient::new(client);
+
+    let bars = tokio_test_block_on(async move {
+        historical
+            .get_history_bars("AAPL", "US_STOCK", Timespan::M5, start_ms, END_MS, None)
+            .await
+    })
+    .expect("fetches bars");
+
+    assert_eq!(bars.len(), 2);
+    requests.recv().expect("first request");
+    requests.recv().expect("walk continues past a short page");
+    assert!(requests.try_recv().is_err(), "an empty page stops the walk");
 }
 
 #[test]

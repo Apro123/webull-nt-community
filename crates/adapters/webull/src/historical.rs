@@ -181,24 +181,23 @@ impl WebullHistoricalClient {
                 break;
             }
 
-            // Pages are newest first; the oldest bar drives the next cursor.
-            let page_len = page.len();
-            let oldest_ms = parse_bar_time_ms(&page[page_len - 1].time)?;
+            // Pages are normally newest first; take the minimum so the walk
+            // also terminates when a page is ordered differently.
+            let mut oldest_ms = u64::MAX;
 
             for bar in page {
                 let bar_ms = parse_bar_time_ms(&bar.time)?;
+                oldest_ms = oldest_ms.min(bar_ms);
+
                 if bar_ms >= start_time_ms {
                     bars.push((bar_ms, bar));
                 }
             }
 
-            // A short page means the data wall was reached.
-            if oldest_ms <= start_time_ms || page_len < PAGE_SIZE as usize {
-                break;
-            }
-
-            // Guard against underflow at the epoch boundary.
-            if oldest_ms <= 1 {
+            // The wall is only reached when a walk further back returns an
+            // empty page; a short page alone just reflects the venue's page
+            // cap, so keep paging unless we hit the start or stall.
+            if oldest_ms <= start_time_ms || oldest_ms >= cursor {
                 break;
             }
             cursor = oldest_ms - 1;

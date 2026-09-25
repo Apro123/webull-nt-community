@@ -84,8 +84,13 @@ python examples/backtest/equity_ema_cross_aapl_webull.py
 ## Limitations
 
 - Data provider only; execution is not supported yet.
-- The API allows up to 300 requests per minute; the client applies a
-  per-minute quota and retries once on rate-limit responses.
+- Prices are rounded to the configured `price_precision` (default 2 in the
+  example and scripts). Venue prices finer than that precision - such as
+  extended-hours prints - are rounded; match the precision to the
+  instrument.
+- The Market Data API is limited to 60 requests per minute per app key
+  (production tier); the client applies a per-minute quota and retries
+  once on rate-limit responses.
 - Historical bar depth and session availability are subject to the venue's
   data terms for the account.
 

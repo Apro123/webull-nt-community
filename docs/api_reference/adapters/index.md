@@ -26,4 +26,5 @@
    polymarket.md
    sandbox.md
    tardis.md
+   webull.md
 ```

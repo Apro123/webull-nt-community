@@ -25,9 +25,13 @@ The following integrations are currently supported:
 | [OKX](https://okx.com)                                     | `OKX`                 | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green) | [Guide](okx.md)                 |
 | [Polymarket](https://polymarket.com)                       | `POLYMARKET`          | Prediction Market (DEX) | ![status](https://img.shields.io/badge/stable-green) | [Guide](polymarket.md)          |
 | [Tardis](https://tardis.dev)                               | `TARDIS`              | Crypto Data Provider    | ![status](https://img.shields.io/badge/stable-green) | [Guide](tardis.md)              |
+| [Webull](https://webull.com)\*                             | `WEBULL`              | Equity Data Provider    | ![status](https://img.shields.io/badge/beta-orange)  | [Guide](webull.md)              |
 
 - **ID**: The default client ID for the integrations adapter clients.
 - **Type**: The type of integration (often the venue type).
+
+\* The Webull adapter is added by this community fork; it is not an official NautilusTrader
+integration.
 
 For Lighter on Robinhood, `LIGHTER_ROBINHOOD` is the venue and explicit client ID to register. The
 shared Lighter factory keeps `LIGHTER` as its compatibility default.

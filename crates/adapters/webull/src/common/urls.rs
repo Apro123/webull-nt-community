@@ -29,3 +29,15 @@ pub const SNAPSHOT_PATH: &str = "/openapi/market-data/stock/snapshot";
 
 /// Path for the trade tick endpoint.
 pub const TICK_PATH: &str = "/openapi/market-data/stock/tick";
+
+/// Extracts the signing host from a base URL (scheme stripped, path dropped).
+#[must_use]
+pub fn host_from_base_url(base_url: &str) -> String {
+    let without_scheme = base_url.split_once("//").map_or(base_url, |(_, rest)| rest);
+
+    without_scheme
+        .split('/')
+        .next()
+        .unwrap_or(without_scheme)
+        .to_string()
+}

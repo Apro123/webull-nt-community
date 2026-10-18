@@ -17,8 +17,10 @@
 
 use std::fmt::Debug;
 
-use nautilus_core::string::secret::REDACTED;
+use nautilus_core::{env::get_or_env_var_opt, string::secret::REDACTED};
 use zeroize::ZeroizeOnDrop;
+
+use super::consts::{WEBULL_ACCESS_TOKEN, WEBULL_API_KEY, WEBULL_API_SECRET};
 
 /// Webull API credentials: the public app key, the HMAC signing secret,
 /// and the account access token (issued by the 2FA token flow).
@@ -52,6 +54,22 @@ impl Credential {
             api_secret: api_secret.into().into_bytes().into_boxed_slice(),
             access_token: access_token.map(|token| token.into_bytes().into_boxed_slice()),
         }
+    }
+
+    /// Resolves credentials from the provided values, falling back to the
+    /// `WEBULL_API_KEY`, `WEBULL_API_SECRET`, and `WEBULL_ACCESS_TOKEN`
+    /// environment variables.
+    #[must_use]
+    pub fn resolve(
+        api_key: Option<String>,
+        api_secret: Option<String>,
+        access_token: Option<String>,
+    ) -> Self {
+        Self::new(
+            get_or_env_var_opt(api_key, WEBULL_API_KEY).unwrap_or_default(),
+            get_or_env_var_opt(api_secret, WEBULL_API_SECRET).unwrap_or_default(),
+            get_or_env_var_opt(access_token, WEBULL_ACCESS_TOKEN),
+        )
     }
 
     /// Returns the public API key.

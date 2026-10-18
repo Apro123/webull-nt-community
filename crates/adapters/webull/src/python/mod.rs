@@ -28,7 +28,7 @@ use pyo3::{
 };
 
 use crate::{
-    common::credential::Credential,
+    common::{credential::Credential, urls::host_from_base_url},
     historical::{
         Timespan, WebullHistoricalClient as CoreWebullHistoricalClient, bars_to_nautilus,
     },
@@ -177,16 +177,6 @@ impl WebullHistoricalClient {
             Python::attach(|py| Ok(tick_dicts(ticks, py)?.unbind()))
         })
     }
-}
-
-/// Extracts the signing host from a base URL (scheme stripped, path dropped).
-fn host_from_base_url(base_url: &str) -> String {
-    let without_scheme = base_url.split_once("//").map_or(base_url, |(_, rest)| rest);
-    without_scheme
-        .split('/')
-        .next()
-        .unwrap_or(without_scheme)
-        .to_string()
 }
 
 fn snapshot_dicts(snapshots: Vec<WebullSnapshot>, py: Python<'_>) -> PyResult<Bound<'_, PyList>> {

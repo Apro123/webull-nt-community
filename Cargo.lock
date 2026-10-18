@@ -7074,14 +7074,19 @@ name = "nautilus-webull"
 version = "0.66.0"
 dependencies = [
  "ahash",
+ "anyhow",
+ "async-trait",
  "base64 0.23.1",
  "hmac 0.12.1",
  "jiff",
  "log",
  "md-5 0.10.6",
+ "nautilus-common",
  "nautilus-core",
+ "nautilus-live",
  "nautilus-model",
  "nautilus-network",
+ "parking_lot",
  "pyo3",
  "pyo3-async-runtimes",
  "pyo3-stub-gen",
@@ -7092,6 +7097,7 @@ dependencies = [
  "sha1 0.10.7",
  "thiserror 2.0.21",
  "tokio",
+ "tokio-util",
  "ustr",
  "zeroize",
 ]

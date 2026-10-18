@@ -32,6 +32,15 @@ pub static WEBULL_VENUE: LazyLock<Venue> = LazyLock::new(|| Venue::new(Ustr::fro
 pub static WEBULL_CLIENT_ID: LazyLock<ClientId> =
     LazyLock::new(|| ClientId::new(Ustr::from(WEBULL)));
 
+/// Environment variable providing the Webull app key.
+pub const WEBULL_API_KEY: &str = "WEBULL_API_KEY";
+
+/// Environment variable providing the Webull HMAC signing secret.
+pub const WEBULL_API_SECRET: &str = "WEBULL_API_SECRET";
+
+/// Environment variable providing the Webull 2FA account access token.
+pub const WEBULL_ACCESS_TOKEN: &str = "WEBULL_ACCESS_TOKEN";
+
 /// Rate limit key for Webull OpenAPI requests.
 pub const WEBULL_REST_RATE_KEY: &str = "webull_rest";
 

@@ -49,6 +49,9 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 
 pub mod common;
+pub mod config;
+pub mod data;
+pub mod factories;
 pub mod historical;
 pub mod http;
 pub mod signing;

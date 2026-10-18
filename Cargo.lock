@@ -7071,7 +7071,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-webull"
-version = "0.64.0"
+version = "0.66.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -7091,7 +7091,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha1 0.10.7",
- "thiserror 2.0.20",
+ "thiserror 2.0.21",
  "tokio",
  "ustr",
  "zeroize",

@@ -17,6 +17,8 @@
 
 use std::time::Duration;
 
+use rstest::rstest;
+
 use nautilus_webull::{
     common::Credential,
     historical::{Timespan, WebullHistoricalClient, parse_bar_time_ms},
@@ -69,18 +71,9 @@ fn mock_client(
     (client, requests)
 }
 
-fn tokio_test_block_on<T: Send + 'static>(
-    fut: impl core::future::Future<Output = T> + Send + 'static,
-) -> T {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .expect("builds runtime")
-        .block_on(fut)
-}
-
-#[test]
-fn test_get_history_bars_pages_backwards_to_start() {
+#[rstest]
+#[tokio::test]
+async fn test_get_history_bars_pages_backwards_to_start() {
     // Page 1: 200 bars (full page) ending at END_MS.
     let page1: Vec<u64> = (0..200).map(|i| END_MS - i * STEP_MS).collect();
     // Page 2: 150 bars continuing backwards, oldest reaching start_ms.
@@ -90,12 +83,10 @@ fn test_get_history_bars_pages_backwards_to_start() {
     let (client, requests) = mock_client(vec![(200, page_json(&page1)), (200, page_json(&page2))]);
     let historical = WebullHistoricalClient::new(client);
 
-    let bars = tokio_test_block_on(async move {
-        historical
-            .get_history_bars("AAPL", "US_STOCK", Timespan::M5, start_ms, END_MS, None)
-            .await
-    })
-    .expect("fetches paged bars");
+    let bars = historical
+        .get_history_bars("AAPL", "US_STOCK", Timespan::M5, start_ms, END_MS, None)
+        .await
+        .expect("fetches paged bars");
 
     assert_eq!(bars.len(), 350, "all bars across both pages");
     assert_eq!(
@@ -123,27 +114,26 @@ fn test_get_history_bars_pages_backwards_to_start() {
     assert!(requests.try_recv().is_err(), "no further requests");
 }
 
-#[test]
-fn test_get_history_bars_stops_when_page_reaches_start() {
+#[rstest]
+#[tokio::test]
+async fn test_get_history_bars_stops_when_page_reaches_start() {
     let page: Vec<u64> = (0..2).map(|i| END_MS - i * STEP_MS).collect();
     let start_ms = *page.last().expect("page has bars");
 
     let (client, requests) = mock_client(vec![(200, page_json(&page))]);
     let historical = WebullHistoricalClient::new(client);
 
-    let bars = tokio_test_block_on(async move {
-        historical
-            .get_history_bars(
-                "AAPL",
-                "US_STOCK",
-                Timespan::M5,
-                start_ms,
-                END_MS,
-                Some("PRE,RTH,ATH"),
-            )
-            .await
-    })
-    .expect("fetches bars");
+    let bars = historical
+        .get_history_bars(
+            "AAPL",
+            "US_STOCK",
+            Timespan::M5,
+            start_ms,
+            END_MS,
+            Some("PRE,RTH,ATH"),
+        )
+        .await
+        .expect("fetches bars");
 
     assert_eq!(bars.len(), 2);
     let request = requests
@@ -153,8 +143,9 @@ fn test_get_history_bars_stops_when_page_reaches_start() {
     assert!(requests.try_recv().is_err(), "no further requests");
 }
 
-#[test]
-fn test_get_history_bars_walks_past_short_page_to_empty() {
+#[rstest]
+#[tokio::test]
+async fn test_get_history_bars_walks_past_short_page_to_empty() {
     // A short page reflects the venue page cap, not the data wall: the walk
     // must continue one page further back and stop on the empty page.
     let page: Vec<u64> = (0..2).map(|i| END_MS - i * STEP_MS).collect();
@@ -163,12 +154,10 @@ fn test_get_history_bars_walks_past_short_page_to_empty() {
     let (client, requests) = mock_client(vec![(200, page_json(&page)), (200, String::from("[]"))]);
     let historical = WebullHistoricalClient::new(client);
 
-    let bars = tokio_test_block_on(async move {
-        historical
-            .get_history_bars("AAPL", "US_STOCK", Timespan::M5, start_ms, END_MS, None)
-            .await
-    })
-    .expect("fetches bars");
+    let bars = historical
+        .get_history_bars("AAPL", "US_STOCK", Timespan::M5, start_ms, END_MS, None)
+        .await
+        .expect("fetches bars");
 
     assert_eq!(bars.len(), 2);
     requests
@@ -180,17 +169,16 @@ fn test_get_history_bars_walks_past_short_page_to_empty() {
     assert!(requests.try_recv().is_err(), "an empty page stops the walk");
 }
 
-#[test]
-fn test_get_history_bars_empty_page() {
+#[rstest]
+#[tokio::test]
+async fn test_get_history_bars_empty_page() {
     let (client, _requests) = mock_client(vec![(200, String::from("[]"))]);
     let historical = WebullHistoricalClient::new(client);
 
-    let bars = tokio_test_block_on(async move {
-        historical
-            .get_history_bars("AAPL", "US_STOCK", Timespan::M5, 1_000, 2_000, None)
-            .await
-    })
-    .expect("empty result");
+    let bars = historical
+        .get_history_bars("AAPL", "US_STOCK", Timespan::M5, 1_000, 2_000, None)
+        .await
+        .expect("empty result");
 
     assert!(bars.is_empty());
 }

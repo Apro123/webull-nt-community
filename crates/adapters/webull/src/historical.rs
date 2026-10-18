@@ -366,8 +366,7 @@ mod tests {
             fixture_bar("2026-09-04T15:00:00.000+0000", "318.90"),
         ];
 
-        let instrument_id = nautilus_model::identifiers::InstrumentId::from_as_ref("AAPL.WEBULL")
-            .expect("parses instrument id");
+        let instrument_id = InstrumentId::from_as_ref("AAPL.WEBULL").expect("parses instrument id");
         let converted = bars_to_nautilus(&bars, &instrument_id, Timespan::M5, 2).expect("converts");
 
         assert_eq!(converted.len(), 2);
@@ -390,8 +389,7 @@ mod tests {
         let mut bar = fixture_bar("2026-09-04T14:55:00.000+0000", "318.44");
         bar.high = "318.00".to_string(); // high below open/close
 
-        let instrument_id = nautilus_model::identifiers::InstrumentId::from_as_ref("AAPL.WEBULL")
-            .expect("parses instrument id");
+        let instrument_id = InstrumentId::from_as_ref("AAPL.WEBULL").expect("parses instrument id");
 
         assert!(
             bars_to_nautilus(std::slice::from_ref(&bar), &instrument_id, Timespan::M5, 2).is_err()

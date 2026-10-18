@@ -52,10 +52,12 @@ pub const SIGNATURE_VERSION: &str = "1.0";
 /// * `timestamp` - UTC timestamp in `YYYY-MM-DDThh:mm:ssZ` form.
 /// * `nonce` - a random per-request nonce.
 ///
-/// # Panics
-///
-/// Panics only if the HMAC construction rejects the key, which cannot happen
-/// with HMAC-SHA1 (keys of any length are accepted).
+/// The HMAC-SHA1 construction accepts keys of any length, so the signing
+/// cannot fail at runtime.
+#[allow(
+    clippy::missing_panics_doc,
+    reason = "HMAC-SHA1 accepts keys of any length, so the HMAC construction cannot reject the key"
+)]
 #[expect(clippy::too_many_arguments)]
 #[must_use]
 pub fn sign_request(

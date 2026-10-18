@@ -17,7 +17,7 @@
 //!
 //! The module is exposed as `nautilus_trader._libnautilus.webull`.
 
-use std::{str::FromStr, time::Duration};
+use std::{fmt::Debug, str::FromStr, time::Duration};
 
 use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::identifiers::{InstrumentId, Symbol, Venue};
@@ -43,7 +43,7 @@ pub struct WebullHistoricalClient {
     inner: CoreWebullHistoricalClient,
 }
 
-impl std::fmt::Debug for WebullHistoricalClient {
+impl Debug for WebullHistoricalClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(WebullHistoricalClient))
             .field("inner", &self.inner)
@@ -232,7 +232,7 @@ fn tick_dicts(ticks: Vec<WebullTick>, py: Python<'_>) -> PyResult<Bound<'_, PyLi
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if registering any module components fails.
+/// Returns an error if registering any module components fails.
 #[pymodule]
 pub fn webull(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<WebullHistoricalClient>()?;

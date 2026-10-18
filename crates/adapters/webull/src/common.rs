@@ -18,7 +18,7 @@
 use std::{fmt::Debug, num::NonZeroU32, sync::LazyLock};
 
 use nautilus_core::string::secret::REDACTED;
-use nautilus_model::identifiers::ClientId;
+use nautilus_model::identifiers::{ClientId, Venue};
 use nautilus_network::ratelimiter::quota::Quota;
 use ustr::Ustr;
 use zeroize::ZeroizeOnDrop;
@@ -27,8 +27,7 @@ use zeroize::ZeroizeOnDrop;
 pub const WEBULL: &str = "WEBULL";
 
 /// Static venue label for market data served by the Webull adapter.
-pub static WEBULL_VENUE: LazyLock<nautilus_model::identifiers::Venue> =
-    LazyLock::new(|| nautilus_model::identifiers::Venue::new(Ustr::from(WEBULL)));
+pub static WEBULL_VENUE: LazyLock<Venue> = LazyLock::new(|| Venue::new(Ustr::from(WEBULL)));
 
 /// Static client ID instance.
 pub static WEBULL_CLIENT_ID: LazyLock<ClientId> =
@@ -84,10 +83,11 @@ impl Credential {
 
     /// Returns the public API key.
     ///
-    /// # Panics
-    ///
-    /// This method should never panic as the value is always valid UTF-8,
-    /// having been created from a `String`.
+    /// The API key is always valid UTF-8 because it is created from a `String`.
+    #[allow(
+        clippy::missing_panics_doc,
+        reason = "the API key is created from a UTF-8 String"
+    )]
     #[must_use]
     pub fn api_key(&self) -> &str {
         std::str::from_utf8(&self.api_key).expect("API key is valid UTF-8")
@@ -95,10 +95,11 @@ impl Credential {
 
     /// Returns the API signing secret.
     ///
-    /// # Panics
-    ///
-    /// This method should never panic as the value is always valid UTF-8,
-    /// having been created from a `String`.
+    /// The API secret is always valid UTF-8 because it is created from a `String`.
+    #[allow(
+        clippy::missing_panics_doc,
+        reason = "the API secret is created from a UTF-8 String"
+    )]
     #[must_use]
     pub fn api_secret(&self) -> &str {
         std::str::from_utf8(&self.api_secret).expect("API secret is valid UTF-8")
@@ -106,10 +107,11 @@ impl Credential {
 
     /// Returns the account access token, if any.
     ///
-    /// # Panics
-    ///
-    /// This method should never panic as the value is always valid UTF-8,
-    /// having been created from a `String`.
+    /// The access token is always valid UTF-8 because it is created from a `String`.
+    #[allow(
+        clippy::missing_panics_doc,
+        reason = "the access token is created from a UTF-8 String"
+    )]
     #[must_use]
     pub fn access_token(&self) -> Option<&str> {
         self.access_token

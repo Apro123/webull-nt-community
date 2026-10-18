@@ -198,7 +198,7 @@ impl WebullHttpClient {
 
             let (code, message) = serde_json::from_str::<WebullErrorResponse>(&body).map_or_else(
                 |_| ("HTTP_STATUS".to_string(), body.clone()),
-                |error| (error.error_code, error.message),
+                |e| (e.error_code, e.message),
             );
 
             if status == 429 && !retried {

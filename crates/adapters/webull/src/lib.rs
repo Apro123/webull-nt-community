@@ -51,7 +51,6 @@
 pub mod common;
 pub mod historical;
 pub mod http;
-pub mod models;
 pub mod signing;
 
 #[cfg(feature = "python")]

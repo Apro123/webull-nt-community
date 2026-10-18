@@ -13,39 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Webull adapter constants and credential storage.
+//! Webull API credential storage.
 
-use std::{fmt::Debug, num::NonZeroU32, sync::LazyLock};
+use std::fmt::Debug;
 
 use nautilus_core::string::secret::REDACTED;
-use nautilus_model::identifiers::{ClientId, Venue};
-use nautilus_network::ratelimiter::quota::Quota;
-use ustr::Ustr;
 use zeroize::ZeroizeOnDrop;
-
-/// The Webull adapter identifier string.
-pub const WEBULL: &str = "WEBULL";
-
-/// Static venue label for market data served by the Webull adapter.
-pub static WEBULL_VENUE: LazyLock<Venue> = LazyLock::new(|| Venue::new(Ustr::from(WEBULL)));
-
-/// Static client ID instance.
-pub static WEBULL_CLIENT_ID: LazyLock<ClientId> =
-    LazyLock::new(|| ClientId::new(Ustr::from(WEBULL)));
-
-/// Default Webull OpenAPI base URL (production, US region).
-pub const WEBULL_HTTP_BASE_URL: &str = "https://api.webull.com";
-
-/// Host header used for request signing (must match the base URL host).
-pub const WEBULL_HTTP_HOST: &str = "api.webull.com";
-
-/// Rate limit key for Webull OpenAPI requests.
-pub const WEBULL_REST_RATE_KEY: &str = "webull_rest";
-
-/// Rate limit for the Webull Market Data API (production tier: 60 requests
-/// per minute per app key; the sandbox tier is lower).
-pub static WEBULL_REST_QUOTA: LazyLock<Quota> =
-    LazyLock::new(|| Quota::per_minute(NonZeroU32::new(60).expect("non-zero")));
 
 /// Webull API credentials: the public app key, the HMAC signing secret,
 /// and the account access token (issued by the 2FA token flow).

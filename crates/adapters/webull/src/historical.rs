@@ -30,7 +30,7 @@ use nautilus_model::{
 };
 use rust_decimal::Decimal;
 
-use crate::{http::WebullHttpClient, models::WebullBar};
+use crate::http::{client::WebullHttpClient, models::WebullBar};
 
 /// Webull intraday timespans and their Nautilus bar aggregation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

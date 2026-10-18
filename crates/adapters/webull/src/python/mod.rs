@@ -28,12 +28,14 @@ use pyo3::{
 };
 
 use crate::{
-    common::Credential,
+    common::credential::Credential,
     historical::{
         Timespan, WebullHistoricalClient as CoreWebullHistoricalClient, bars_to_nautilus,
     },
-    http::WebullHttpClient,
-    models::{WebullSnapshot, WebullTick},
+    http::{
+        client::WebullHttpClient,
+        models::{WebullSnapshot, WebullTick},
+    },
 };
 
 /// Python wrapper for the core Webull historical client.
@@ -244,7 +246,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::common::{WEBULL_HTTP_BASE_URL, WEBULL_HTTP_HOST};
+    use crate::common::urls::{WEBULL_HTTP_BASE_URL, WEBULL_HTTP_HOST};
 
     #[rstest]
     fn test_host_from_base_url() {

@@ -22,36 +22,16 @@ use nautilus_network::http::{HttpClient, USER_AGENT};
 
 use crate::{
     common::{
-        Credential, WEBULL_HTTP_BASE_URL, WEBULL_HTTP_HOST, WEBULL_REST_QUOTA, WEBULL_REST_RATE_KEY,
+        consts::{WEBULL_REST_QUOTA, WEBULL_REST_RATE_KEY},
+        credential::Credential,
+        urls::{BARS_PATH, SNAPSHOT_PATH, TICK_PATH, WEBULL_HTTP_BASE_URL, WEBULL_HTTP_HOST},
     },
-    models::{WebullBar, WebullErrorResponse, WebullSnapshot, WebullTick, WebullTickResponse},
+    http::{
+        error::{Error, Result},
+        models::{WebullBar, WebullErrorResponse, WebullSnapshot, WebullTick, WebullTickResponse},
+    },
     signing::{SIGNATURE_ALGORITHM, SIGNATURE_VERSION, sign_request},
 };
-
-/// HTTP errors for the Webull OpenAPI client.
-#[derive(Debug, thiserror::Error)]
-pub enum Error {
-    /// An HTTP request failed at the transport level.
-    #[error("HTTP request failed: {0}")]
-    Request(String),
-
-    /// The Webull API returned an error response.
-    #[error("Webull API error [{code}]: {message}")]
-    ApiError {
-        /// The HTTP status code.
-        status: u16,
-        /// The Webull error code.
-        code: String,
-        /// The Webull error message.
-        message: String,
-    },
-
-    /// Failed to deserialize the JSON response body.
-    #[error("Failed to parse response body as JSON: {0}")]
-    JsonParse(#[from] serde_json::Error),
-}
-
-pub type Result<T> = std::result::Result<T, Error>;
 
 /// Backoff applied after a single HTTP 429 (rate limit) response.
 const RATE_LIMIT_BACKOFF_SECS: u64 = 60;
@@ -246,9 +226,7 @@ impl WebullHttpClient {
             query.push(("trading_sessions".to_string(), sessions.to_string()));
         }
 
-        let body = self
-            .signed_get("/openapi/market-data/stock/bars", &query)
-            .await?;
+        let body = self.signed_get(BARS_PATH, &query).await?;
         Ok(serde_json::from_str(&body)?)
     }
 
@@ -269,9 +247,7 @@ impl WebullHttpClient {
             ("overnight_required".to_string(), "false".to_string()),
         ];
 
-        let body = self
-            .signed_get("/openapi/market-data/stock/snapshot", &query)
-            .await?;
+        let body = self.signed_get(SNAPSHOT_PATH, &query).await?;
         Ok(serde_json::from_str(&body)?)
     }
 
@@ -294,9 +270,7 @@ impl WebullHttpClient {
             ("end_time".to_string(), end_time_ms.to_string()),
         ];
 
-        let body = self
-            .signed_get("/openapi/market-data/stock/tick", &query)
-            .await?;
+        let body = self.signed_get(TICK_PATH, &query).await?;
         let response: WebullTickResponse = serde_json::from_str(&body)?;
         Ok(response.result)
     }
@@ -332,60 +306,11 @@ fn current_utc_timestamp() -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        io::{Read, Write},
-        net::{TcpListener, TcpStream},
-        sync::mpsc,
-        thread,
-    };
-
     use rstest::rstest;
 
+    use crate::common::testing;
+
     use super::*;
-
-    /// Spins up a single-request loopback HTTP server returning `responses`
-    /// in order and capturing each raw request.
-    fn mock_server(responses: Vec<(u16, String)>) -> (String, mpsc::Receiver<String>) {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("binds loopback port");
-        let addr = listener.local_addr().expect("local address");
-        let (tx, rx) = mpsc::channel();
-
-        thread::spawn(move || {
-            for (status, body) in responses {
-                let (mut stream, _) = listener.accept().expect("accepts connection");
-                let request = read_request_head(&mut stream);
-                tx.send(request).expect("sends captured request");
-                let response = format!(
-                    "HTTP/1.1 {status} Mock\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                    body.len()
-                );
-                stream
-                    .write_all(response.as_bytes())
-                    .expect("writes response");
-            }
-        });
-
-        (format!("http://127.0.0.1:{}", addr.port()), rx)
-    }
-
-    fn read_request_head(stream: &mut TcpStream) -> String {
-        let mut buffer = vec![0u8; 8192];
-        let mut collected = Vec::new();
-
-        loop {
-            match stream.read(&mut buffer) {
-                Ok(0) => break,
-                Ok(n) => {
-                    collected.extend_from_slice(&buffer[..n]);
-                    if String::from_utf8_lossy(&collected).contains("\r\n\r\n") {
-                        break;
-                    }
-                }
-                Err(_) => break,
-            }
-        }
-        String::from_utf8_lossy(&collected).to_string()
-    }
 
     fn test_credential() -> Credential {
         Credential::new(
@@ -396,9 +321,10 @@ mod tests {
     }
 
     #[rstest]
-    fn test_get_bars_signs_and_parses() {
+    #[tokio::test]
+    async fn test_get_bars_signs_and_parses() {
         let bars = r#"[{"symbol":"AAPL","time":"2026-09-04T14:55:00.000+0000","open":"318.98","high":"319.07","low":"318.3","close":"318.44","volume":"619677","trading_session":"RTH","instrument_id":"913256135"}]"#;
-        let (base_url, requests) = mock_server(vec![(200, bars.to_string())]);
+        let (base_url, requests) = testing::start(vec![(200, bars.to_string())]);
 
         let client = WebullHttpClient::new_with_base_url(
             test_credential(),
@@ -408,12 +334,10 @@ mod tests {
         )
         .expect("builds client");
 
-        let bars = tokio_test_block_on(async move {
-            client
-                .get_bars("AAPL", "US_STOCK", "M5", 200, 1_788_550_800_000, None)
-                .await
-        })
-        .expect("fetches bars");
+        let bars = client
+            .get_bars("AAPL", "US_STOCK", "M5", 200, 1_788_550_800_000, None)
+            .await
+            .expect("fetches bars");
 
         assert_eq!(bars.len(), 1);
         assert_eq!(bars[0].close, "318.44");
@@ -434,10 +358,11 @@ mod tests {
     }
 
     #[rstest]
-    fn test_api_error_is_surfaced() {
+    #[tokio::test]
+    async fn test_api_error_is_surfaced() {
         let error_body =
             r#"{"message":"Header x-signature is invalid.","error_code":"UNAUTHORIZED"}"#;
-        let (base_url, _requests) = mock_server(vec![(401, error_body.to_string())]);
+        let (base_url, _requests) = testing::start(vec![(401, error_body.to_string())]);
 
         let client = WebullHttpClient::new_with_base_url(
             test_credential(),
@@ -447,11 +372,9 @@ mod tests {
         )
         .expect("builds client");
 
-        let result = tokio_test_block_on(async move {
-            client
-                .get_bars("AAPL", "US_STOCK", "M5", 100, 1_788_550_800_000, None)
-                .await
-        });
+        let result = client
+            .get_bars("AAPL", "US_STOCK", "M5", 100, 1_788_550_800_000, None)
+            .await;
 
         match result {
             Err(Error::ApiError { status, code, .. }) => {
@@ -463,9 +386,10 @@ mod tests {
     }
 
     #[rstest]
-    fn test_rate_limit_retries_once() {
+    #[tokio::test]
+    async fn test_rate_limit_retries_once() {
         let bars = "[]";
-        let (base_url, requests) = mock_server(vec![
+        let (base_url, requests) = testing::start(vec![
             (429, "rate limited".to_string()),
             (200, bars.to_string()),
         ]);
@@ -478,12 +402,10 @@ mod tests {
         )
         .expect("builds client");
 
-        let bars = tokio_test_block_on(async move {
-            client
-                .get_bars("AAPL", "US_STOCK", "M5", 100, 1_788_550_800_000, None)
-                .await
-        })
-        .expect("succeeds after 429 retry");
+        let bars = client
+            .get_bars("AAPL", "US_STOCK", "M5", 100, 1_788_550_800_000, None)
+            .await
+            .expect("succeeds after 429 retry");
 
         assert!(bars.is_empty());
         let first = requests.recv().expect("first request");
@@ -514,16 +436,5 @@ mod tests {
     fn test_build_url_without_query() {
         let url = build_url("https://api.webull.com", "/path", &[]);
         assert_eq!(url, "https://api.webull.com/path");
-    }
-
-    /// Runs an async block on a fresh single-threaded runtime.
-    fn tokio_test_block_on<T: Send + 'static>(
-        fut: impl core::future::Future<Output = T> + Send + 'static,
-    ) -> T {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("builds runtime")
-            .block_on(fut)
     }
 }

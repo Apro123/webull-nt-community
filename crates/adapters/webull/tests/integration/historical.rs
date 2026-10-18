@@ -20,9 +20,9 @@ use std::time::Duration;
 use rstest::rstest;
 
 use nautilus_webull::{
-    common::Credential,
+    common::credential::Credential,
     historical::{Timespan, WebullHistoricalClient, parse_bar_time_ms},
-    http::WebullHttpClient,
+    http::client::WebullHttpClient,
 };
 
 use crate::common::mock_server;

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! A loopback single-thread HTTP mock server for integration tests.
+//! Test-only loopback HTTP mock server.
 
 use std::{
     io::{Read, Write},

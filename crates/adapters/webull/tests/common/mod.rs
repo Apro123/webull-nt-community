@@ -15,4 +15,5 @@
 
 //! Shared test utilities for Webull adapter integration tests.
 
+#[path = "../../src/common/testing.rs"]
 pub(crate) mod mock_server;

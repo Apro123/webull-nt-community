@@ -51,7 +51,6 @@ nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
 
 ahash = { workspace = true }
-anyhow = { workspace = true }
 base64 = { workspace = true }
 hmac = { workspace = true }
 jiff = { workspace = true }

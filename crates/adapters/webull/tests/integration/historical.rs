@@ -19,10 +19,11 @@ use std::time::Duration;
 
 use rstest::rstest;
 
+use nautilus_network::retry::RetryConfig;
 use nautilus_webull::{
     common::credential::Credential,
     historical::{Timespan, WebullHistoricalClient, parse_bar_time_ms},
-    http::client::WebullHttpClient,
+    http::client::{WebullHttpClient, WebullHttpConfig},
 };
 
 use crate::common::mock_server;
@@ -57,15 +58,25 @@ fn mock_client(
     responses: Vec<(u16, String)>,
 ) -> (WebullHttpClient, std::sync::mpsc::Receiver<String>) {
     let (base_url, requests) = mock_server::start(responses);
-    let client = WebullHttpClient::new_with_base_url(
+    let config = WebullHttpConfig {
+        base_url,
+        host: "127.0.0.1".to_string(),
+        retry: RetryConfig {
+            max_retries: 1,
+            initial_delay_ms: 1,
+            max_delay_ms: 1,
+            jitter_ms: 0,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let client = WebullHttpClient::new_with_config(
         Credential::new(
             "test-api-key".to_string(),
             "test-api-secret".to_string(),
             Some("test-access-token".to_string()),
         ),
-        &base_url,
-        "127.0.0.1",
-        Duration::from_millis(1),
+        config,
     )
     .expect("builds client");
     (client, requests)

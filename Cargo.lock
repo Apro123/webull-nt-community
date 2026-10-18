@@ -7074,7 +7074,6 @@ name = "nautilus-webull"
 version = "0.66.0"
 dependencies = [
  "ahash",
- "anyhow",
  "base64 0.23.1",
  "hmac 0.12.1",
  "jiff",

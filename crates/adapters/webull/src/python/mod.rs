@@ -17,9 +17,9 @@
 //!
 //! The module is exposed as `nautilus_trader._libnautilus.webull`.
 
-use std::{fmt::Debug, str::FromStr, time::Duration};
+use std::{fmt::Debug, str::FromStr};
 
-use nautilus_core::python::to_pyvalue_err;
+use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::identifiers::{InstrumentId, Symbol, Venue};
 use pyo3::{
     IntoPyObjectExt,
@@ -33,7 +33,7 @@ use crate::{
         Timespan, WebullHistoricalClient as CoreWebullHistoricalClient, bars_to_nautilus,
     },
     http::{
-        client::WebullHttpClient,
+        client::{WebullHttpClient, WebullHttpConfig},
         models::{WebullSnapshot, WebullTick},
     },
 };
@@ -69,16 +69,15 @@ impl WebullHistoricalClient {
         base_url: Option<String>,
     ) -> PyResult<Self> {
         let credential = Credential::new(api_key, api_secret, access_token);
-        let http = match base_url {
-            Some(url) => WebullHttpClient::new_with_base_url(
-                credential,
-                &url,
-                &host_from_base_url(&url),
-                Duration::from_secs(60),
-            )
-            .map_err(to_pyvalue_err)?,
-            None => WebullHttpClient::new(credential).map_err(to_pyvalue_err)?,
+        let config = match base_url {
+            Some(url) => WebullHttpConfig {
+                host: host_from_base_url(&url),
+                base_url: url,
+                ..Default::default()
+            },
+            None => WebullHttpConfig::default(),
         };
+        let http = WebullHttpClient::new_with_config(credential, config).map_err(to_pyvalue_err)?;
 
         Ok(Self {
             inner: CoreWebullHistoricalClient::new(http),
@@ -121,14 +120,14 @@ impl WebullHistoricalClient {
                     trading_sessions.as_deref(),
                 )
                 .await
-                .map_err(to_pyvalue_err)?;
+                .map_err(to_pyruntime_err)?;
             let bars = bars_to_nautilus(
                 &venue_bars,
                 &instrument_id,
                 parsed_timespan,
                 price_precision,
             )
-            .map_err(to_pyvalue_err)?;
+            .map_err(to_pyruntime_err)?;
             Python::attach(|py| bars.into_py_any(py))
         })
     }
@@ -150,7 +149,7 @@ impl WebullHistoricalClient {
                 .http()
                 .get_snapshot(&symbols, &category)
                 .await
-                .map_err(to_pyvalue_err)?;
+                .map_err(to_pyruntime_err)?;
             Python::attach(|py| Ok(snapshot_dicts(snapshots, py)?.unbind()))
         })
     }
@@ -174,7 +173,7 @@ impl WebullHistoricalClient {
                 .http()
                 .get_ticks(&symbol, &category, count, end_ms)
                 .await
-                .map_err(to_pyvalue_err)?;
+                .map_err(to_pyruntime_err)?;
             Python::attach(|py| Ok(tick_dicts(ticks, py)?.unbind()))
         })
     }

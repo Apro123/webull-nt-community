@@ -30,7 +30,10 @@ use nautilus_model::{
 };
 use rust_decimal::Decimal;
 
-use crate::http::{client::WebullHttpClient, models::WebullBar};
+use crate::http::{client::WebullHttpClient, error::Error, models::WebullBar};
+
+/// The result type for the Webull historical client.
+pub type Result<T> = std::result::Result<T, Error>;
 
 /// Webull intraday timespans and their Nautilus bar aggregation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -103,7 +106,7 @@ impl std::str::FromStr for Timespan {
     /// # Errors
     ///
     /// Returns an error if the value is not a known timespan.
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
+    fn from_str(value: &str) -> std::result::Result<Self, Self::Err> {
         match value {
             "M1" => Ok(Self::M1),
             "M5" => Ok(Self::M5),
@@ -158,7 +161,7 @@ impl WebullHistoricalClient {
         start_time_ms: u64,
         end_time_ms: u64,
         trading_sessions: Option<&str>,
-    ) -> anyhow::Result<Vec<WebullBar>> {
+    ) -> Result<Vec<WebullBar>> {
         const PAGE_SIZE: u32 = 200;
 
         let mut bars: Vec<(u64, WebullBar)> = Vec::new();
@@ -216,18 +219,18 @@ impl WebullHistoricalClient {
 ///
 /// Returns an error if the time does not carry the expected offset or is
 /// not a valid timestamp.
-pub fn parse_bar_time_ms(time: &str) -> anyhow::Result<u64> {
+pub fn parse_bar_time_ms(time: &str) -> Result<u64> {
     const OFFSET: &str = "+0000";
 
     let without_offset = time
         .strip_suffix(OFFSET)
-        .ok_or_else(|| anyhow::anyhow!("bar time lacks the '{OFFSET}' offset: {time}"))?;
+        .ok_or_else(|| Error::BarTime(format!("'{time}' lacks the '{OFFSET}' offset")))?;
     let normalized = format!("{without_offset}+00:00");
     let timestamp = jiff::Timestamp::from_str(&normalized)
-        .map_err(|e| anyhow::anyhow!("invalid bar time '{time}': {e}"))?;
+        .map_err(|e| Error::BarTime(format!("'{time}': {e}")))?;
 
     u64::try_from(timestamp.as_millisecond())
-        .map_err(|_| anyhow::anyhow!("bar time is pre-epoch: {time}"))
+        .map_err(|_| Error::BarTime(format!("'{time}' is pre-epoch")))
 }
 
 /// Converts venue bars to Nautilus [`Bar`]s.
@@ -246,7 +249,7 @@ pub fn bars_to_nautilus(
     instrument_id: &InstrumentId,
     timespan: Timespan,
     price_precision: u8,
-) -> anyhow::Result<Vec<Bar>> {
+) -> Result<Vec<Bar>> {
     let bar_type = BarType::new(
         *instrument_id,
         timespan.bar_specification(),
@@ -262,23 +265,24 @@ pub fn bars_to_nautilus(
             let volume = quantity_from_str(&bar.volume)?;
             let ts_event = UnixNanos::from(parse_bar_time_ms(&bar.time)? * 1_000_000);
 
-            Bar::new_checked(bar_type, open, high, low, close, volume, ts_event, ts_event)
-                .map_err(|e| anyhow::anyhow!("invalid bar {}: {e}", bar.time))
+            Bar::new_checked(bar_type, open, high, low, close, volume, ts_event, ts_event).map_err(
+                |e| Error::InvalidBar {
+                    time: bar.time.clone(),
+                    message: e.to_string(),
+                },
+            )
         })
         .collect()
 }
 
-fn price_from_str(value: &str, precision: u8) -> anyhow::Result<Price> {
-    let decimal =
-        Decimal::from_str(value).map_err(|e| anyhow::anyhow!("invalid price '{value}': {e}"))?;
-    Price::from_decimal_dp(decimal, precision)
-        .map_err(|e| anyhow::anyhow!("invalid price '{value}': {e}"))
+fn price_from_str(value: &str, precision: u8) -> Result<Price> {
+    let decimal = Decimal::from_str(value).map_err(|e| Error::Price(format!("'{value}': {e}")))?;
+    Price::from_decimal_dp(decimal, precision).map_err(|e| Error::Price(format!("'{value}': {e}")))
 }
 
-fn quantity_from_str(value: &str) -> anyhow::Result<Quantity> {
-    let decimal =
-        Decimal::from_str(value).map_err(|e| anyhow::anyhow!("invalid volume '{value}': {e}"))?;
-    Quantity::from_decimal(decimal).map_err(|e| anyhow::anyhow!("invalid volume '{value}': {e}"))
+fn quantity_from_str(value: &str) -> Result<Quantity> {
+    let decimal = Decimal::from_str(value).map_err(|e| Error::Volume(format!("'{value}': {e}")))?;
+    Quantity::from_decimal(decimal).map_err(|e| Error::Volume(format!("'{value}': {e}")))
 }
 
 /// Sorts bars globally oldest first and removes duplicate times,

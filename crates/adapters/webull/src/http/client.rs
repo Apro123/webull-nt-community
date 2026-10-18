@@ -15,10 +15,13 @@
 
 //! Signed REST client for the Webull OpenAPI market data endpoints.
 
-use std::{collections::HashMap, fmt::Debug, time::Duration};
+use std::{collections::HashMap, fmt::Debug};
 
 use nautilus_core::{UUID4, consts::NAUTILUS_USER_AGENT, string::urlencoding};
-use nautilus_network::http::{HttpClient, USER_AGENT};
+use nautilus_network::{
+    http::{HttpClient, USER_AGENT, parse_retry_after},
+    retry::{RetryConfig, RetryManager},
+};
 
 use crate::{
     common::{
@@ -33,10 +36,37 @@ use crate::{
     signing::{SIGNATURE_ALGORITHM, SIGNATURE_VERSION, sign_request},
 };
 
-/// Backoff applied after a single HTTP 429 (rate limit) response.
-const RATE_LIMIT_BACKOFF_SECS: u64 = 60;
+/// Transport configuration for the Webull HTTP client.
+#[derive(Clone, Debug)]
+pub struct WebullHttpConfig {
+    /// The REST base URL.
+    pub base_url: String,
+    /// The host header used for request signing (must match the base URL host).
+    pub host: String,
+    /// Optional explicit proxy URL.
+    pub proxy_url: Option<String>,
+    /// Per-request timeout in seconds; `None` disables the timeout.
+    pub timeout_secs: Option<u64>,
+    /// Retry policy applied to failed requests, honoring the venue's `Retry-After`.
+    pub retry: RetryConfig,
+}
 
-/// A Webull OpenAPI HTTP client with request signing and rate limiting.
+impl Default for WebullHttpConfig {
+    fn default() -> Self {
+        Self {
+            base_url: WEBULL_HTTP_BASE_URL.to_string(),
+            host: WEBULL_HTTP_HOST.to_string(),
+            proxy_url: None,
+            timeout_secs: Some(60),
+            retry: RetryConfig {
+                max_delay_ms: 60_000,
+                ..Default::default()
+            },
+        }
+    }
+}
+
+/// A Webull OpenAPI HTTP client with request signing, rate limiting, and retries.
 ///
 /// See <https://developer.webull.com/open-api>.
 #[derive(Clone)]
@@ -45,7 +75,7 @@ pub struct WebullHttpClient {
     host: String,
     credential: Credential,
     client: HttpClient,
-    rate_limit_backoff: Duration,
+    retry: RetryConfig,
 }
 
 impl Debug for WebullHttpClient {
@@ -59,33 +89,21 @@ impl Debug for WebullHttpClient {
 }
 
 impl WebullHttpClient {
-    /// Creates a new [`WebullHttpClient`] against the production base URL.
+    /// Creates a new [`WebullHttpClient`] against the production endpoint with default settings.
     ///
     /// # Errors
     ///
     /// Returns an error if the HTTP client cannot be built.
-    pub fn new(credential: Credential) -> anyhow::Result<Self> {
-        Self::new_with_base_url(
-            credential,
-            WEBULL_HTTP_BASE_URL,
-            WEBULL_HTTP_HOST,
-            Duration::from_secs(RATE_LIMIT_BACKOFF_SECS),
-        )
+    pub fn new(credential: Credential) -> Result<Self> {
+        Self::new_with_config(credential, WebullHttpConfig::default())
     }
 
-    /// Creates a new [`WebullHttpClient`] against an explicit base URL and host.
-    ///
-    /// The `host` is used for request signing and must match the base URL host.
+    /// Creates a new [`WebullHttpClient`] with an explicit transport configuration.
     ///
     /// # Errors
     ///
     /// Returns an error if the HTTP client cannot be built.
-    pub fn new_with_base_url(
-        credential: Credential,
-        base_url: &str,
-        host: &str,
-        rate_limit_backoff: Duration,
-    ) -> anyhow::Result<Self> {
+    pub fn new_with_config(credential: Credential, config: WebullHttpConfig) -> Result<Self> {
         let mut headers = HashMap::new();
         headers.insert(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string());
 
@@ -94,15 +112,16 @@ impl WebullHttpClient {
             .headers(headers)
             .keyed_quotas(keyed_quotas)
             .default_quota(*WEBULL_REST_QUOTA)
-            .maybe_timeout_secs(Some(60))
+            .maybe_timeout_secs(config.timeout_secs)
+            .maybe_proxy_url(config.proxy_url)
             .build()?;
 
         Ok(Self {
-            base_url: base_url.to_string(),
-            host: host.to_string(),
+            base_url: config.base_url,
+            host: config.host,
             credential,
             client,
-            rate_limit_backoff,
+            retry: config.retry,
         })
     }
 
@@ -114,87 +133,104 @@ impl WebullHttpClient {
 
     /// Sends a signed GET request and returns the JSON response body as a string.
     ///
-    /// Retries once after a 60-second backoff when the API responds with 429.
+    /// Failed attempts are retried according to the configured [`RetryConfig`], using any
+    /// `Retry-After` delay the API reports as a floor on the exponential backoff.
     ///
     /// # Errors
     ///
     /// Returns an error if the request fails or the API returns a non-success status.
     async fn signed_get(&self, path: &str, query: &[(String, String)]) -> Result<String> {
-        let mut retried = false;
+        RetryManager::new(self.retry.clone())
+            .invocation(
+                "Webull GET",
+                || self.signed_get_once(path, query),
+                Error::is_retryable,
+                Error::Retry,
+            )
+            .retry_delay(&Error::retry_delay)
+            .execute()
+            .await
+    }
 
-        loop {
-            let timestamp = current_utc_timestamp();
-            let nonce = UUID4::new().as_str().replace('-', "");
-            let signature = sign_request(
-                self.credential.api_secret(),
-                &self.host,
-                path,
-                query,
-                None,
-                self.credential.api_key(),
-                &timestamp,
-                &nonce,
-            );
+    /// Makes a single signed GET attempt, re-signing with a fresh timestamp and nonce.
+    async fn signed_get_once(&self, path: &str, query: &[(String, String)]) -> Result<String> {
+        // A fresh signature timestamp and nonce per attempt.
+        let timestamp = current_utc_timestamp();
+        let nonce = UUID4::new().as_str().replace('-', "");
+        let signature = sign_request(
+            self.credential.api_secret(),
+            &self.host,
+            path,
+            query,
+            None,
+            self.credential.api_key(),
+            &timestamp,
+            &nonce,
+        );
 
-            let mut headers = HashMap::new();
-            headers.insert(
-                "x-app-key".to_string(),
-                self.credential.api_key().to_string(),
-            );
-            headers.insert(
-                "x-signature-algorithm".to_string(),
-                SIGNATURE_ALGORITHM.to_string(),
-            );
-            headers.insert(
-                "x-signature-version".to_string(),
-                SIGNATURE_VERSION.to_string(),
-            );
-            headers.insert("x-signature-nonce".to_string(), nonce);
-            headers.insert("x-version".to_string(), "v2".to_string());
-            headers.insert("x-timestamp".to_string(), timestamp);
-            headers.insert("host".to_string(), self.host.clone());
-            headers.insert("x-signature".to_string(), signature);
-            if let Some(token) = self.credential.access_token() {
-                headers.insert("x-access-token".to_string(), token.to_string());
-            }
-
-            let url = build_url(&self.base_url, path, query);
-            log::debug!("Requesting: {url}");
-
-            let rate_keys = Some(vec![WEBULL_REST_RATE_KEY.to_string()]);
-            let response = self
-                .client
-                .get(url, None, Some(headers), None, rate_keys)
-                .await
-                .map_err(|e| Error::Request(e.to_string()))?;
-
-            let status = response.status.as_u16();
-            let body = String::from_utf8_lossy(&response.body).to_string();
-
-            if response.status.is_success() {
-                log::trace!("{body}");
-                return Ok(body);
-            }
-
-            let (code, message) = serde_json::from_str::<WebullErrorResponse>(&body).map_or_else(
-                |_| ("HTTP_STATUS".to_string(), body.clone()),
-                |e| (e.error_code, e.message),
-            );
-
-            if status == 429 && !retried {
-                log::warn!("Webull API rate limit hit; retrying once after backoff");
-                retried = true;
-                tokio::time::sleep(self.rate_limit_backoff).await;
-                continue;
-            }
-
-            log::error!("Webull API error [{status} {code}]: {message}");
-            return Err(Error::ApiError {
-                status,
-                code,
-                message,
-            });
+        let mut headers = HashMap::new();
+        headers.insert(
+            "x-app-key".to_string(),
+            self.credential.api_key().to_string(),
+        );
+        headers.insert(
+            "x-signature-algorithm".to_string(),
+            SIGNATURE_ALGORITHM.to_string(),
+        );
+        headers.insert(
+            "x-signature-version".to_string(),
+            SIGNATURE_VERSION.to_string(),
+        );
+        headers.insert("x-signature-nonce".to_string(), nonce);
+        headers.insert("x-version".to_string(), "v2".to_string());
+        headers.insert("x-timestamp".to_string(), timestamp);
+        headers.insert("host".to_string(), self.host.clone());
+        headers.insert("x-signature".to_string(), signature);
+        if let Some(token) = self.credential.access_token() {
+            headers.insert("x-access-token".to_string(), token.to_string());
         }
+
+        let url = build_url(&self.base_url, path, query);
+        log::debug!("Requesting: {url}");
+
+        let rate_keys = Some(vec![WEBULL_REST_RATE_KEY.to_string()]);
+        let response = self
+            .client
+            .get(url, None, Some(headers), None, rate_keys)
+            .await?;
+
+        let status = response.status.as_u16();
+        let body = String::from_utf8_lossy(&response.body).to_string();
+
+        if response.status.is_success() {
+            log::trace!("{body}");
+            return Ok(body);
+        }
+
+        let (code, message) = serde_json::from_str::<WebullErrorResponse>(&body).map_or_else(
+            |_| ("HTTP_STATUS".to_string(), body.clone()),
+            |e| (e.error_code, e.message),
+        );
+        let retry_after_secs = response
+            .headers
+            .get("retry-after")
+            .and_then(|value| parse_retry_after(value, jiff::Timestamp::now()))
+            .map(|delay| delay.as_secs());
+
+        let error = Error::ApiError {
+            status,
+            code,
+            message,
+            retry_after_secs,
+        };
+
+        if error.is_retryable() {
+            log::warn!("Webull API error [{status}]: retrying");
+        } else {
+            log::error!("Webull API error: {error}");
+        }
+
+        Err(error)
     }
 
     /// Returns historical bars ending at `end_time_ms`, newest first.
@@ -312,6 +348,23 @@ mod tests {
 
     use super::*;
 
+    fn test_client(base_url: &str) -> WebullHttpClient {
+        let config = WebullHttpConfig {
+            base_url: base_url.to_string(),
+            host: "127.0.0.1".to_string(),
+            retry: RetryConfig {
+                max_retries: 1,
+                initial_delay_ms: 1,
+                max_delay_ms: 1,
+                jitter_ms: 0,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        WebullHttpClient::new_with_config(test_credential(), config).expect("builds client")
+    }
+
     fn test_credential() -> Credential {
         Credential::new(
             "test-api-key".to_string(),
@@ -326,13 +379,7 @@ mod tests {
         let bars = r#"[{"symbol":"AAPL","time":"2026-09-04T14:55:00.000+0000","open":"318.98","high":"319.07","low":"318.3","close":"318.44","volume":"619677","trading_session":"RTH","instrument_id":"913256135"}]"#;
         let (base_url, requests) = testing::start(vec![(200, bars.to_string())]);
 
-        let client = WebullHttpClient::new_with_base_url(
-            test_credential(),
-            &base_url,
-            "127.0.0.1",
-            Duration::from_millis(1),
-        )
-        .expect("builds client");
+        let client = test_client(&base_url);
 
         let bars = client
             .get_bars("AAPL", "US_STOCK", "M5", 200, 1_788_550_800_000, None)
@@ -364,13 +411,7 @@ mod tests {
             r#"{"message":"Header x-signature is invalid.","error_code":"UNAUTHORIZED"}"#;
         let (base_url, _requests) = testing::start(vec![(401, error_body.to_string())]);
 
-        let client = WebullHttpClient::new_with_base_url(
-            test_credential(),
-            &base_url,
-            "127.0.0.1",
-            Duration::from_millis(1),
-        )
-        .expect("builds client");
+        let client = test_client(&base_url);
 
         let result = client
             .get_bars("AAPL", "US_STOCK", "M5", 100, 1_788_550_800_000, None)
@@ -394,13 +435,7 @@ mod tests {
             (200, bars.to_string()),
         ]);
 
-        let client = WebullHttpClient::new_with_base_url(
-            test_credential(),
-            &base_url,
-            "127.0.0.1",
-            Duration::from_millis(1),
-        )
-        .expect("builds client");
+        let client = test_client(&base_url);
 
         let bars = client
             .get_bars("AAPL", "US_STOCK", "M5", 100, 1_788_550_800_000, None)

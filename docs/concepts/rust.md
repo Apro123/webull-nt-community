@@ -71,6 +71,7 @@ registration path (importable controller configs) is Python-only.
 | Polymarket          | ✓    | ✓      |
 | Sandbox             | ✓    | ✓      |
 | Tardis              | ✓    | ✓      |
+| Webull              | ✓    | ✓      |
 
 ### Choosing a path
 

@@ -8,13 +8,18 @@ Nautech Systems Pty Ltd, the official NautilusTrader project, or Webull.
 
 Webull provides US equities market data through its OpenAPI.
 
-This fork integrates with the Webull historical market data endpoints.
-The capabilities of this adapter include:
+This fork integrates with the Webull historical and snapshot market data
+endpoints. The capabilities of this adapter include:
 
 - `WebullHistoricalClient.get_history_bars` fetches historical bars through
   the venue's paged API and converts them to Nautilus `Bar` objects.
-- `WebullHistoricalClient.get_snapshot` fetches live quote snapshots.
-- `WebullHistoricalClient.get_ticks` fetches recent trade ticks.
+- `WebullHistoricalClient.get_snapshot` fetches live quote snapshots as
+  `QuoteTick` objects.
+- `WebullHistoricalClient.get_ticks` fetches recent trades as `TradeTick`
+  objects.
+- `WebullDataClient` is a polling `DataClient` (registered through
+  `WebullDataClientFactory` and `WebullDataClientConfig`) that delivers
+  quotes, trades, and bars to a live engine from those same REST endpoints.
 
 :::info
 The adapter is a data provider. The Webull execution (trading) API is not
@@ -35,10 +40,33 @@ provide the 2FA access token, which the Webull SDK writes to
 `conf/token.txt` (first line) next to the app credentials. When provided,
 the adapter sends the token on every request.
 
+## Live data
+
+The Webull OpenAPI is request/response only, so `WebullDataClient` polls the
+snapshot, tick, and bar endpoints every `poll_interval_secs` (default 5) for
+the instruments subscribed through the engine. Instruments must already be
+loaded in the cache (the venue exposes no instrument discovery endpoint);
+quote and trade subscriptions deliver ticks continuously, and bar
+subscriptions deliver each completed bar of a supported timespan.
+
+```python
+from nautilus_trader.adapters.webull import (
+    WebullDataClientConfig,
+    WebullDataClientFactory,
+)
+from nautilus_trader.live.node import TradingNode
+
+config = WebullDataClientConfig(poll_interval_secs=5)
+node = TradingNode(...)
+node.register_data_client_factory(WebullDataClientFactory, config)
+```
+
 ## Bars
 
-`get_history_bars` accepts the following timespans, mapped to Nautilus bar
-aggregations:
+`get_history_bars(instrument_id, timespan, start_ms, end_ms,
+trading_sessions=None, category="US_STOCK", price_precision=2)` accepts
+the following timespans (as strings, or the `Timespan` enum's
+`api_value()`), mapped to Nautilus bar aggregations:
 
 | Timespan | Nautilus aggregation |
 | :------- | :------------------- |
@@ -94,7 +122,9 @@ uv run --project python pytest python/tests/integration/adapters/webull -v
 ```
 
 Each call is retried up to three times with exponential backoff (the sandbox
-is shared and intermittently unavailable).
+is shared and intermittently unavailable). Unlike the official adapters, whose
+credential-consuming smoke tests are Rust `#[ignore]` tests, these live in
+Python so they exercise the same bindings users do.
 
 ## Limitations
 
@@ -105,7 +135,8 @@ is shared and intermittently unavailable).
   instrument.
 - The Market Data API is limited to 60 requests per minute per app key
   (production tier); the client applies a per-minute quota and retries
-  once on rate-limit responses.
+  transient failures with exponential backoff, honoring the venue's
+  `Retry-After` header (tunable through `WebullDataClientConfig`).
 - Historical bar depth and session availability are subject to the venue's
   data terms for the account.
 

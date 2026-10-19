@@ -10,7 +10,9 @@ crates.io; build it from this repository.
 
 The `nautilus-webull` crate provides access to a subset of the Webull OpenAPI market data endpoints
 (historical bars, snapshots, and ticks) for US stocks/ETFs, signed with the venue's
-HMAC-SHA1 request signature scheme.
+HMAC-SHA1 request signature scheme, plus a polling live `DataClient` on the same endpoints.
+See the [integration guide](../../../docs/integrations/webull.md) for supported capabilities and
+API constraints.
 
 ## NautilusTrader
 

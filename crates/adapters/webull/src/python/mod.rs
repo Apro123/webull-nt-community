@@ -17,204 +17,48 @@
 //!
 //! The module is exposed as `nautilus_trader._libnautilus.webull`.
 
-use std::{fmt::Debug, str::FromStr};
+pub mod config;
+pub mod factories;
+pub mod historical;
 
+use nautilus_common::factories::{ClientConfig, DataClientFactory};
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
-use nautilus_model::identifiers::{InstrumentId, Symbol, Venue};
-use pyo3::{
-    IntoPyObjectExt,
-    prelude::*,
-    types::{PyDict, PyList},
-};
+use nautilus_system::get_global_pyo3_registry;
+use pyo3::prelude::*;
 
 use crate::{
-    common::{credential::Credential, urls::host_from_base_url},
-    historical::{
-        Timespan, WebullHistoricalClient as CoreWebullHistoricalClient, bars_to_nautilus,
+    common::{
+        consts::{WEBULL, WEBULL_CLIENT_ID},
+        enums::Timespan,
     },
-    http::{
-        client::{WebullHttpClient, WebullHttpConfig},
-        models::{WebullSnapshot, WebullTick},
-    },
+    config::WebullDataClientConfig,
+    factories::WebullDataClientFactory,
 };
 
-/// Python wrapper for the core Webull historical client.
-#[pyo3::pyclass(module = "nautilus_trader.adapters.webull")]
-#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.webull")]
-pub struct WebullHistoricalClient {
-    inner: CoreWebullHistoricalClient,
-}
-
-impl Debug for WebullHistoricalClient {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(stringify!(WebullHistoricalClient))
-            .field("inner", &self.inner)
-            .finish()
+#[expect(clippy::needless_pass_by_value)]
+fn extract_webull_data_factory(
+    py: Python<'_>,
+    factory: Py<PyAny>,
+) -> PyResult<Box<dyn DataClientFactory>> {
+    match factory.extract::<WebullDataClientFactory>(py) {
+        Ok(f) => Ok(Box::new(f)),
+        Err(e) => Err(to_pyvalue_err(format!(
+            "Failed to extract WebullDataClientFactory: {e}"
+        ))),
     }
 }
 
-#[pymethods]
-#[pyo3_stub_gen::derive::gen_stub_pymethods]
-impl WebullHistoricalClient {
-    /// Core Webull historical client for fetching historical market data.
-    ///
-    /// The venue's 2FA access token (first line of the SDK token file) is
-    /// required by this account and is sent on every request.
-    #[new]
-    #[pyo3(signature = (api_key, api_secret, access_token=None, base_url=None))]
-    fn py_new(
-        api_key: String,
-        api_secret: String,
-        access_token: Option<String>,
-        base_url: Option<String>,
-    ) -> PyResult<Self> {
-        let credential = Credential::new(api_key, api_secret, access_token);
-        let config = match base_url {
-            Some(url) => WebullHttpConfig {
-                host: host_from_base_url(&url),
-                base_url: url,
-                ..Default::default()
-            },
-            None => WebullHttpConfig::default(),
-        };
-        let http = WebullHttpClient::new_with_config(credential, config).map_err(to_pyvalue_err)?;
-
-        Ok(Self {
-            inner: CoreWebullHistoricalClient::new(http),
-        })
+#[expect(clippy::needless_pass_by_value)]
+fn extract_webull_data_config(
+    py: Python<'_>,
+    config: Py<PyAny>,
+) -> PyResult<Box<dyn ClientConfig>> {
+    match config.extract::<WebullDataClientConfig>(py) {
+        Ok(c) => Ok(Box::new(c)),
+        Err(e) => Err(to_pyvalue_err(format!(
+            "Failed to extract WebullDataClientConfig: {e}"
+        ))),
     }
-
-    /// Fetches historical bars for a symbol in `[start_ms, end_ms]` as Nautilus
-    /// `Bar` objects, oldest first.
-    ///
-    /// `timespan` is one of `M1`, `M5`, `M15`, `M30`, `M60`, `M120`, `M240`,
-    /// `D`, `W`, `M`. `trading_sessions` is optional, e.g. `PRE,RTH,ATH`
-    /// (omit for RTH-only, the venue default).
-    #[expect(clippy::too_many_arguments)]
-    #[pyo3(signature = (symbol, category, timespan, start_ms, end_ms, trading_sessions=None, venue=None, price_precision=2))]
-    fn get_history_bars<'py>(
-        &self,
-        py: Python<'py>,
-        symbol: String,
-        category: String,
-        timespan: &str,
-        start_ms: u64,
-        end_ms: u64,
-        trading_sessions: Option<String>,
-        venue: Option<&str>,
-        price_precision: u8,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let parsed_timespan = Timespan::from_str(timespan).map_err(to_pyvalue_err)?;
-        let venue = Venue::from(venue.unwrap_or("WEBULL"));
-        let instrument_id = InstrumentId::new(Symbol::from(symbol.clone()), venue);
-
-        let inner = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let venue_bars = inner
-                .get_history_bars(
-                    &symbol,
-                    &category,
-                    parsed_timespan,
-                    start_ms,
-                    end_ms,
-                    trading_sessions.as_deref(),
-                )
-                .await
-                .map_err(to_pyruntime_err)?;
-            let bars = bars_to_nautilus(
-                &venue_bars,
-                &instrument_id,
-                parsed_timespan,
-                price_precision,
-            )
-            .map_err(to_pyruntime_err)?;
-            Python::attach(|py| bars.into_py_any(py))
-        })
-    }
-
-    /// Fetches live quote snapshots for the given symbols.
-    ///
-    /// Returns a list of dictionaries with the venue's string-typed fields
-    /// and millisecond epoch times.
-    #[pyo3(signature = (symbols, category))]
-    fn get_snapshot<'py>(
-        &self,
-        py: Python<'py>,
-        symbols: Vec<String>,
-        category: String,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let inner = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let snapshots = inner
-                .http()
-                .get_snapshot(&symbols, &category)
-                .await
-                .map_err(to_pyruntime_err)?;
-            Python::attach(|py| Ok(snapshot_dicts(snapshots, py)?.unbind()))
-        })
-    }
-
-    /// Fetches trade ticks ending at `end_ms`, newest first.
-    ///
-    /// Returns a list of dictionaries with the venue's string-typed fields
-    /// and millisecond epoch times.
-    #[pyo3(signature = (symbol, category, end_ms, count=200))]
-    fn get_ticks<'py>(
-        &self,
-        py: Python<'py>,
-        symbol: String,
-        category: String,
-        end_ms: u64,
-        count: u32,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let inner = self.inner.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let ticks = inner
-                .http()
-                .get_ticks(&symbol, &category, count, end_ms)
-                .await
-                .map_err(to_pyruntime_err)?;
-            Python::attach(|py| Ok(tick_dicts(ticks, py)?.unbind()))
-        })
-    }
-}
-
-fn snapshot_dicts(snapshots: Vec<WebullSnapshot>, py: Python<'_>) -> PyResult<Bound<'_, PyList>> {
-    let list = PyList::empty(py);
-    for snapshot in snapshots {
-        let dict = PyDict::new(py);
-        dict.set_item("symbol", snapshot.symbol)?;
-        dict.set_item("price", snapshot.price)?;
-        dict.set_item("open", snapshot.open)?;
-        dict.set_item("high", snapshot.high)?;
-        dict.set_item("low", snapshot.low)?;
-        dict.set_item("close", snapshot.close)?;
-        dict.set_item("pre_close", snapshot.pre_close)?;
-        dict.set_item("volume", snapshot.volume)?;
-        dict.set_item("bid", snapshot.bid)?;
-        dict.set_item("ask", snapshot.ask)?;
-        dict.set_item("bid_size", snapshot.bid_size)?;
-        dict.set_item("ask_size", snapshot.ask_size)?;
-        dict.set_item("quote_time", snapshot.quote_time)?;
-        dict.set_item("last_trade_time", snapshot.last_trade_time)?;
-        dict.set_item("instrument_id", snapshot.instrument_id)?;
-        list.append(dict)?;
-    }
-    Ok(list)
-}
-
-fn tick_dicts(ticks: Vec<WebullTick>, py: Python<'_>) -> PyResult<Bound<'_, PyList>> {
-    let list = PyList::empty(py);
-    for tick in ticks {
-        let dict = PyDict::new(py);
-        dict.set_item("time", tick.time)?;
-        dict.set_item("price", tick.price)?;
-        dict.set_item("volume", tick.volume)?;
-        dict.set_item("side", tick.side)?;
-        dict.set_item("trading_session", tick.trading_session)?;
-        list.append(dict)?;
-    }
-    Ok(list)
 }
 
 /// Webull Python module.
@@ -225,60 +69,72 @@ fn tick_dicts(ticks: Vec<WebullTick>, py: Python<'_>) -> PyResult<Bound<'_, PyLi
 ///
 /// Returns an error if registering any module components fails.
 #[pymodule]
-pub fn webull(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+pub fn webull(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    use self::historical::WebullHistoricalClient;
+
+    m.add("WEBULL", WEBULL)?;
+    m.add("WEBULL_CLIENT_ID", *WEBULL_CLIENT_ID)?;
+    m.add_class::<Timespan>()?;
+    m.add_class::<WebullDataClientConfig>()?;
+    m.add_class::<WebullDataClientFactory>()?;
     m.add_class::<WebullHistoricalClient>()?;
+
+    let registry = get_global_pyo3_registry();
+
+    if let Err(e) =
+        registry.register_factory_extractor(WEBULL.to_string(), extract_webull_data_factory)
+    {
+        return Err(to_pyruntime_err(format!(
+            "Failed to register Webull data factory extractor: {e}"
+        )));
+    }
+
+    if let Err(e) = registry.register_config_extractor(
+        "WebullDataClientConfig".to_string(),
+        extract_webull_data_config,
+    ) {
+        return Err(to_pyruntime_err(format!(
+            "Failed to register Webull data config extractor: {e}"
+        )));
+    }
+
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
+    use nautilus_model::identifiers::ClientId;
+    use pyo3::prelude::*;
     use rstest::rstest;
 
-    use super::*;
-    use crate::common::urls::{WEBULL_HTTP_BASE_URL, WEBULL_HTTP_HOST};
-
     #[rstest]
-    fn test_host_from_base_url() {
-        assert_eq!(
-            host_from_base_url("https://api.webull.com"),
-            "api.webull.com"
-        );
-        assert_eq!(
-            host_from_base_url("http://127.0.0.1:12345"),
-            "127.0.0.1:12345"
-        );
-        assert_eq!(
-            host_from_base_url("https://api.webull.com/v2"),
-            "api.webull.com"
-        );
-        assert_eq!(host_from_base_url(WEBULL_HTTP_BASE_URL), WEBULL_HTTP_HOST);
-    }
+    fn test_module_registration() {
+        Python::initialize();
+        Python::attach(|py| {
+            let module = pyo3::wrap_pymodule!(super::webull)(py);
+            let module = module.bind(py);
 
-    #[rstest]
-    fn test_client_construction_without_network() {
-        let client = WebullHistoricalClient::py_new(
-            "test-key".to_string(),
-            "test-secret".to_string(),
-            Some("test-token".to_string()),
-            None,
-        )
-        .expect("constructs without network access");
-
-        let debug = format!("{client:?}");
-        assert!(debug.contains("********"), "short keys mask to asterisks");
-        assert!(!debug.contains("test-key"), "the raw key must not appear");
-    }
-
-    #[rstest]
-    fn test_client_construction_with_custom_base_url() {
-        let client = WebullHistoricalClient::py_new(
-            "test-key".to_string(),
-            "test-secret".to_string(),
-            None,
-            Some("http://127.0.0.1:9".to_string()),
-        )
-        .expect("constructs without network access");
-
-        assert!(format!("{client:?}").contains("127.0.0.1:9"));
+            assert_eq!(module.name().unwrap(), "webull");
+            assert_eq!(
+                module
+                    .getattr("WEBULL")
+                    .unwrap()
+                    .extract::<String>()
+                    .unwrap(),
+                "WEBULL",
+            );
+            assert_eq!(
+                module
+                    .getattr("WEBULL_CLIENT_ID")
+                    .unwrap()
+                    .extract::<ClientId>()
+                    .unwrap(),
+                ClientId::from("WEBULL"),
+            );
+            assert!(module.getattr("WebullDataClientConfig").is_ok());
+            assert!(module.getattr("WebullDataClientFactory").is_ok());
+            assert!(module.getattr("WebullHistoricalClient").is_ok());
+            assert!(module.getattr("Timespan").is_ok());
+        });
     }
 }

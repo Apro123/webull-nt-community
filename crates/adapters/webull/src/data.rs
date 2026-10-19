@@ -382,21 +382,21 @@ fn now_ms() -> u64 {
     Timestamp::now().as_millisecond().max(0) as u64
 }
 
-fn price_from_str(value: &str, precision: u8) -> anyhow::Result<Price> {
+pub(crate) fn price_from_str(value: &str, precision: u8) -> anyhow::Result<Price> {
     let decimal =
         Decimal::from_str(value).map_err(|e| anyhow::anyhow!("invalid price '{value}': {e}"))?;
     Price::from_decimal_dp(decimal, precision)
         .map_err(|e| anyhow::anyhow!("invalid price '{value}': {e}"))
 }
 
-fn quantity_from_str(value: &str, precision: u8) -> anyhow::Result<Quantity> {
+pub(crate) fn quantity_from_str(value: &str, precision: u8) -> anyhow::Result<Quantity> {
     let decimal =
         Decimal::from_str(value).map_err(|e| anyhow::anyhow!("invalid volume '{value}': {e}"))?;
     Quantity::from_decimal_dp(decimal, precision)
         .map_err(|e| anyhow::anyhow!("invalid volume '{value}': {e}"))
 }
 
-fn aggressor_side_from_str(value: &str) -> AggressorSide {
+pub(crate) fn aggressor_side_from_str(value: &str) -> AggressorSide {
     match value {
         "B" => AggressorSide::Buy,
         "S" => AggressorSide::Sell,

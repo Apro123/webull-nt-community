@@ -44,6 +44,7 @@ from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import Price
 from nautilus_trader.model import Symbol
 from nautilus_trader.model import Venue
+from nautilus_trader.model import NautilusDataType
 from nautilus_trader.persistence import ParquetDataCatalog
 
 
@@ -113,7 +114,7 @@ async def ensure_webull_bars(
     missing = catalog.get_missing_intervals_for_request(
         start_ns,
         end_ns,
-        "bars",
+        NautilusDataType.Bar,
         bar_type,
     )
     print(f"Catalog gaps for {bar_type}: {len(missing)} interval(s)")
@@ -129,13 +130,14 @@ async def ensure_webull_bars(
     total = 0
     for gap_start, gap_end in missing:
         bars = await client.get_history_bars(
-            symbol=symbol,
-            category="US_STOCK",
+            instrument_id=instrument.id,
             timespan=timespan,
             start_ms=gap_start // 1_000_000,
             # Venue end time is inclusive; keep the last bar out of the next gap.
             end_ms=gap_end // 1_000_000 - 1,
             trading_sessions=sessions,
+            category="US_STOCK",
+            price_precision=instrument.price_precision,
         )
         # The venue start boundary is inclusive, and catalog gaps begin at
         # the stored data's end, so drop any boundary bar already stored.

@@ -19,6 +19,9 @@ Test webull historical client behavior.
 import pytest
 
 from nautilus_trader.adapters.webull import WebullHistoricalClient
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import Symbol
+from nautilus_trader.model import Venue
 
 
 def test_client_constructor_masks_credentials() -> None:
@@ -42,5 +45,7 @@ def test_get_history_bars_rejects_unknown_timespan() -> None:
     """
     client = WebullHistoricalClient(api_key="test-key", api_secret="test-secret")
 
-    with pytest.raises(ValueError, match="invalid timespan"):
-        client.get_history_bars("AAPL", "stock", "M7", 0, 1)
+    instrument_id = InstrumentId(Symbol("AAPL"), Venue("WEBULL"))
+
+    with pytest.raises(ValueError, match="unknown timespan"):
+        client.get_history_bars(instrument_id, "M7", 0, 1)

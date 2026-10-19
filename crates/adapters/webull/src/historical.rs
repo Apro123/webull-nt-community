@@ -23,8 +23,8 @@ use std::str::FromStr;
 use ahash::AHashSet;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    data::{Bar, BarSpecification, BarType},
-    enums::{AggregationSource, BarAggregation, PriceType},
+    data::{Bar, BarType},
+    enums::AggregationSource,
     identifiers::InstrumentId,
     types::{Price, Quantity},
 };
@@ -35,95 +35,7 @@ use crate::http::{client::WebullHttpClient, error::Error, models::WebullBar};
 /// The result type for the Webull historical client.
 pub type Result<T> = std::result::Result<T, Error>;
 
-/// Webull intraday timespans and their Nautilus bar aggregation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Timespan {
-    /// One-minute bars.
-    M1,
-    /// Five-minute bars.
-    M5,
-    /// Fifteen-minute bars.
-    M15,
-    /// Thirty-minute bars.
-    M30,
-    /// One-hour bars.
-    M60,
-    /// Two-hour bars.
-    M120,
-    /// Four-hour bars.
-    M240,
-    /// Daily bars.
-    Day,
-    /// Weekly bars.
-    Week,
-    /// Monthly bars.
-    Month,
-}
-
-impl Timespan {
-    /// The timespan value accepted by the Webull API.
-    #[must_use]
-    pub const fn api_value(self) -> &'static str {
-        match self {
-            Self::M1 => "M1",
-            Self::M5 => "M5",
-            Self::M15 => "M15",
-            Self::M30 => "M30",
-            Self::M60 => "M60",
-            Self::M120 => "M120",
-            Self::M240 => "M240",
-            Self::Day => "D",
-            Self::Week => "W",
-            Self::Month => "M",
-        }
-    }
-
-    /// The Nautilus bar specification this timespan corresponds to
-    /// (last-price aggregation).
-    #[must_use]
-    pub fn bar_specification(self) -> BarSpecification {
-        match self {
-            Self::M1 => BarSpecification::new(1, BarAggregation::Minute, PriceType::Last),
-            Self::M5 => BarSpecification::new(5, BarAggregation::Minute, PriceType::Last),
-            Self::M15 => BarSpecification::new(15, BarAggregation::Minute, PriceType::Last),
-            Self::M30 => BarSpecification::new(30, BarAggregation::Minute, PriceType::Last),
-            Self::M60 => BarSpecification::new(1, BarAggregation::Hour, PriceType::Last),
-            Self::M120 => BarSpecification::new(2, BarAggregation::Hour, PriceType::Last),
-            Self::M240 => BarSpecification::new(4, BarAggregation::Hour, PriceType::Last),
-            Self::Day => BarSpecification::new(1, BarAggregation::Day, PriceType::Last),
-            Self::Week => BarSpecification::new(1, BarAggregation::Week, PriceType::Last),
-            Self::Month => BarSpecification::new(1, BarAggregation::Month, PriceType::Last),
-        }
-    }
-}
-
-impl std::str::FromStr for Timespan {
-    type Err = String;
-
-    /// Parses a Webull API timespan string (`M1`, `M5`, `M15`, `M30`, `M60`,
-    /// `M120`, `M240`, `D`, `W`, or `M`).
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the value is not a known timespan.
-    fn from_str(value: &str) -> std::result::Result<Self, Self::Err> {
-        match value {
-            "M1" => Ok(Self::M1),
-            "M5" => Ok(Self::M5),
-            "M15" => Ok(Self::M15),
-            "M30" => Ok(Self::M30),
-            "M60" => Ok(Self::M60),
-            "M120" => Ok(Self::M120),
-            "M240" => Ok(Self::M240),
-            "D" => Ok(Self::Day),
-            "W" => Ok(Self::Week),
-            "M" => Ok(Self::Month),
-            other => Err(format!(
-                "invalid timespan '{other}', expected one of M1, M5, M15, M30, M60, M120, M240, D, W, or M"
-            )),
-        }
-    }
-}
+pub use crate::common::enums::Timespan;
 
 /// A historical market data client for Webull.
 #[derive(Debug, Clone)]
@@ -318,31 +230,6 @@ mod tests {
             trading_session: "RTH".to_string(),
             instrument_id: "913256135".to_string(),
         }
-    }
-
-    #[rstest]
-    fn test_timespan_api_values() {
-        assert_eq!(Timespan::M1.api_value(), "M1");
-        assert_eq!(Timespan::M5.api_value(), "M5");
-        assert_eq!(Timespan::M60.api_value(), "M60");
-        assert_eq!(Timespan::Day.api_value(), "D");
-        assert_eq!(Timespan::Week.api_value(), "W");
-        assert_eq!(Timespan::Month.api_value(), "M");
-    }
-
-    #[rstest]
-    fn test_timespan_bar_specifications() {
-        let spec = Timespan::M5.bar_specification();
-        assert_eq!(spec.step.get(), 5);
-        assert_eq!(spec.aggregation, BarAggregation::Minute);
-        assert_eq!(spec.price_type, PriceType::Last);
-
-        let spec = Timespan::M120.bar_specification();
-        assert_eq!(spec.step.get(), 2);
-        assert_eq!(spec.aggregation, BarAggregation::Hour);
-
-        let spec = Timespan::Month.bar_specification();
-        assert_eq!(spec.aggregation, BarAggregation::Month);
     }
 
     #[rstest]

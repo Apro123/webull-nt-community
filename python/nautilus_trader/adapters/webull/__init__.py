@@ -21,6 +21,11 @@ from nautilus_trader._libnautilus.webull import *  # noqa: F403 (undefined-local
 
 
 __all__ = [
+    "WEBULL",
+    "WEBULL_CLIENT_ID",
+    "Timespan",
+    "WebullDataClientConfig",
+    "WebullDataClientFactory",
     "WebullHistoricalClient",
 ]
 

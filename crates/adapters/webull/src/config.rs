@@ -21,6 +21,14 @@ use serde::{Deserialize, Serialize};
 /// Configuration for [`WebullDataClient`](crate::data::WebullDataClient).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.adapters.webull", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.webull")
+)]
 pub struct WebullDataClientConfig {
     /// App key; `None` falls back to the `WEBULL_API_KEY` environment variable.
     pub api_key: Option<SecretString>,
@@ -45,6 +53,17 @@ pub struct WebullDataClientConfig {
     /// Maximum retry backoff in milliseconds; venue `Retry-After` delays can exceed it.
     pub retry_delay_max_ms: u64,
 }
+
+#[cfg(feature = "python")]
+nautilus_core::impl_pyo3_config_getters!(WebullDataClientConfig {
+    base_url_http: Option<String>,
+    category: String,
+    poll_interval_secs: u64,
+    timeout_secs: Option<u64>,
+    max_retries: u32,
+    retry_delay_initial_ms: u64,
+    retry_delay_max_ms: u64,
+});
 
 impl Default for WebullDataClientConfig {
     fn default() -> Self {

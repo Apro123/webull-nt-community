@@ -34,11 +34,15 @@ import time
 import pytest
 
 from nautilus_trader.adapters.webull import WebullHistoricalClient
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import Symbol
+from nautilus_trader.model import Venue
 
 
 SANDBOX_BASE_URL = "https://api.sandbox.webull.com"
 CATEGORY = "US_STOCK"
 SYMBOL = "AAPL"
+INSTRUMENT_ID = InstrumentId(Symbol(SYMBOL), Venue("WEBULL"))
 
 MAX_ATTEMPTS = 3
 BASE_DELAY_S = 1.0
@@ -63,12 +67,12 @@ async def _call_with_retry(awaitable_factory):
     Await the factory, retrying up to three times with exponential backoff.
     """
     # The client surfaces every request failure (network, rate limit, API
-    # error) as a ValueError, so any failure is retried rather than sorted
+    # error) as a RuntimeError, so any failure is retried rather than sorted
     # by type. Delays grow 1s, 2s across the three attempts.
     for attempt in range(MAX_ATTEMPTS):
         try:
             return await awaitable_factory()
-        except ValueError:
+        except RuntimeError:
             if attempt == MAX_ATTEMPTS - 1:
                 raise
             await asyncio.sleep(BASE_DELAY_S * 2**attempt)
@@ -93,7 +97,9 @@ async def test_sandbox_ticks() -> None:
     """
     client = _client()
     end_ms = int(time.time() * 1000)
-    ticks = await _call_with_retry(lambda: client.get_ticks(SYMBOL, CATEGORY, end_ms, count=10))
+    ticks = await _call_with_retry(
+        lambda: client.get_ticks(INSTRUMENT_ID, end_ms, category=CATEGORY, count=10),
+    )
     assert isinstance(ticks, list)
 
 
@@ -106,6 +112,6 @@ async def test_sandbox_history_bars() -> None:
     end_ms = int(time.time() * 1000)
     start_ms = end_ms - 2 * 24 * 60 * 60 * 1000  # Two days back
     bars = await _call_with_retry(
-        lambda: client.get_history_bars(SYMBOL, CATEGORY, "M5", start_ms, end_ms),
+        lambda: client.get_history_bars(INSTRUMENT_ID, "M5", start_ms, end_ms, category=CATEGORY),
     )
     assert isinstance(bars, list)

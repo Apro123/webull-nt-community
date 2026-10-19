@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "Webull integration adapter for the Nautilus trading engine"
+description = "Webull market data integration adapter for the Nautilus trading engine"
 categories.workspace = true
 keywords.workspace = true
 documentation.workspace = true
@@ -28,8 +28,13 @@ extension-module = [
   "pyo3/extension-module",
 ]
 python = [
+  "dep:nautilus-system",
+  "nautilus-common/python",
   "nautilus-core/python",
+  "nautilus-live/python",
   "nautilus-model/python",
+  "nautilus-network/python",
+  "nautilus-system/python",
   "pyo3",
   "pyo3-async-runtimes",
   "pyo3-stub-gen",
@@ -39,7 +44,12 @@ high-precision = ["nautilus-model/high-precision"]
 # The pyo3 dependencies are referenced only by feature-gate plumbing in
 # the `python` feature; machete cannot see uses behind cfg attributes.
 [package.metadata.cargo-machete]
-ignored = ["pyo3", "pyo3-async-runtimes", "pyo3-stub-gen"]
+ignored = [
+  "nautilus-system", # Optional dep activated only via the python feature
+  "pyo3",
+  "pyo3-async-runtimes",
+  "pyo3-stub-gen",
+]
 
 [package.metadata.docs.rs]
 features = ["high-precision"]
@@ -51,6 +61,7 @@ nautilus-core = { workspace = true }
 nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
+nautilus-system = { workspace = true, optional = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
@@ -65,6 +76,7 @@ rust_decimal = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha1 = { workspace = true }
+strum = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }

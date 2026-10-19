@@ -7,19 +7,22 @@ re-fetching the same data. Complements the [Webull integration guide](webull.md)
 
 `WebullHistoricalClient` (from `nautilus_trader.adapters.webull`) exposes:
 
-- `get_history_bars(symbol, category, timespan, start_ms, end_ms,
-  trading_sessions=None, venue="WEBULL", price_precision=2)` returns Nautilus `Bar`
+- `get_history_bars(instrument_id, timespan, start_ms, end_ms,
+  trading_sessions=None, category="US_STOCK", price_precision=2)` returns Nautilus `Bar`
   objects, oldest first.
-- `get_snapshot(symbols, category)` returns a list of dicts with the venue's
-  string-typed fields and millisecond epoch times.
-- `get_ticks(symbol, category, end_ms, count=200)` returns a list of dicts, newest
-  first.
+- `get_snapshot(symbols, category="US_STOCK", price_precision=2)` returns
+  Nautilus `QuoteTick` objects.
+- `get_ticks(instrument_id, end_ms, category="US_STOCK", count=200,
+  price_precision=2)` returns `TradeTick` objects, newest first.
 
 All three are coroutines (`await`).
 
 ## Fetch semantics
 
 - `category` is the venue product category, e.g. `"US_STOCK"` (not `"stock"`).
+- `instrument_id` is an `InstrumentId` (e.g. `AAPL.WEBULL`); the historical client
+  raises `ValueError` for bad arguments and `RuntimeError` for request
+  failures.
 - `timespan` is one of `M1 M5 M15 M30 M60 M120 M240 D W M`, mapped to Nautilus
   bar aggregations (e.g. 5-minute becomes `5-MINUTE-LAST-EXTERNAL`).
 - `start_ms` / `end_ms` are epoch **milliseconds**.
@@ -33,7 +36,7 @@ All three are coroutines (`await`).
 - The venue reports prices and volumes as strings; the client normalizes them
   to `Price` (at the given precision) and `Quantity`.
 - The rate limit is 60 requests/minute (production tier); the client applies
-  a per-minute quota and retries once on 429.
+  a per-minute quota and retries transient failures, honoring `Retry-After`.
 - History depth and session availability are subject to the venue's data
   terms; for some accounts M5 bars lag real time by a few days.
 
@@ -87,13 +90,16 @@ only what is missing" glue is yours to write. The catalog provides the
 primitives (`get_missing_intervals_for_request`, `query_bars`):
 
 ```python
+from nautilus_trader.model import InstrumentId, Symbol, Venue
+
+instrument_id = InstrumentId(Symbol("AAPL"), Venue("WEBULL"))
 bar_type = "AAPL.WEBULL-5-MINUTE-LAST-EXTERNAL"
 start_ns, end_ns = ...  # UnixNanos
 
 missing = catalog.get_missing_intervals_for_request(
     start_ns,
     end_ns,
-    "bars",
+    NautilusDataType.Bar,
     bar_type,
 )
 
@@ -102,11 +108,10 @@ if missing:
     for m_start, m_end in missing:
         fresh.extend(
             await client.get_history_bars(  # venue takes ms
-                "AAPL",
-                "US_STOCK",
+                instrument_id,
                 "M5",
-                start_ms=m_start // 1_000_000,
-                end_ms=m_end // 1_000_000,
+                m_start // 1_000_000,
+                m_end // 1_000_000,
             ),
         )
     catalog.write_bars(

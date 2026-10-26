@@ -63,6 +63,20 @@ WEBULL_API_KEY=... WEBULL_API_SECRET=... \
 uv run --project python pytest python/tests/integration/adapters/webull -v
 ```
 
+## Cleaning Rust build caches
+
+Building and testing this workspace can leave tens of gigabytes under `target/`,
+mostly Rust incremental compilation caches (`target/*/incremental`, especially
+the custom `nextest` profile). Those caches are safe to delete; compiled deps are
+kept, so the next build is cheaper than a full `cargo clean`.
+
+```bash
+bash scripts/clean-rust-incremental.bash          # dry-run: list sizes only
+bash scripts/clean-rust-incremental.bash --apply  # delete incremental/ dirs
+```
+
+For a full wipe of `target/` (and other build dirs), use `make clean-builds`.
+
 ## License
 
 LGPL-3.0-only, as upstream; see [LICENSE](LICENSE). The Webull adapter code in this fork is

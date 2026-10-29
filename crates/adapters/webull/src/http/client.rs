@@ -27,14 +27,22 @@ use crate::{
     common::{
         consts::{WEBULL_REST_QUOTA, WEBULL_REST_RATE_KEY},
         credential::Credential,
-        urls::{BARS_PATH, SNAPSHOT_PATH, TICK_PATH, WEBULL_HTTP_BASE_URL, WEBULL_HTTP_HOST},
+        urls::{
+            BARS_PATH, CRYPTO_INSTRUMENTS_PATH, SNAPSHOT_PATH, STOCK_INSTRUMENTS_PATH, TICK_PATH,
+            WEBULL_HTTP_BASE_URL, WEBULL_HTTP_HOST,
+        },
     },
     http::{
         error::{Error, Result},
-        models::{WebullBar, WebullErrorResponse, WebullSnapshot, WebullTick, WebullTickResponse},
+        models::{
+            WebullBar, WebullCryptoInstrumentPage, WebullErrorResponse, WebullInstrumentPage,
+            WebullSnapshot, WebullTick, WebullTickResponse,
+        },
     },
     signing::{SIGNATURE_ALGORITHM, SIGNATURE_VERSION, sign_request},
 };
+
+const CONTENT_TYPE_JSON: &str = "application/json";
 
 /// Transport configuration for the Webull HTTP client.
 #[derive(Clone, Debug)]
@@ -233,6 +241,117 @@ impl WebullHttpClient {
         Err(error)
     }
 
+
+    /// Sends a signed POST request with a JSON body and returns the response body.
+    ///
+    /// The body is included in the HMAC-SHA1 signature (MD5 digest) and sent with
+    /// `Content-Type: application/json`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the API returns a non-success status.
+    pub async fn signed_post(&self, path: &str, body: &str) -> Result<String> {
+        RetryManager::new(self.retry.clone())
+            .invocation(
+                "Webull POST",
+                || self.signed_post_once(path, body),
+                Error::is_retryable,
+                Error::Retry,
+            )
+            .retry_delay(&Error::retry_delay)
+            .execute()
+            .await
+    }
+
+    /// Makes a single signed POST attempt, re-signing with a fresh timestamp and nonce.
+    async fn signed_post_once(&self, path: &str, body: &str) -> Result<String> {
+        let timestamp = current_utc_timestamp();
+        let nonce = UUID4::new().as_str().replace('-', "");
+        let signature = sign_request(
+            self.credential.api_secret(),
+            &self.host,
+            path,
+            &[],
+            Some(body),
+            self.credential.api_key(),
+            &timestamp,
+            &nonce,
+        );
+
+        let mut headers = HashMap::new();
+        headers.insert(
+            "x-app-key".to_string(),
+            self.credential.api_key().to_string(),
+        );
+        headers.insert(
+            "x-signature-algorithm".to_string(),
+            SIGNATURE_ALGORITHM.to_string(),
+        );
+        headers.insert(
+            "x-signature-version".to_string(),
+            SIGNATURE_VERSION.to_string(),
+        );
+        headers.insert("x-signature-nonce".to_string(), nonce);
+        headers.insert("x-version".to_string(), "v2".to_string());
+        headers.insert("x-timestamp".to_string(), timestamp);
+        headers.insert("host".to_string(), self.host.clone());
+        headers.insert("x-signature".to_string(), signature);
+        headers.insert("Content-Type".to_string(), CONTENT_TYPE_JSON.to_string());
+        if let Some(token) = self.credential.access_token() {
+            headers.insert("x-access-token".to_string(), token.to_string());
+        }
+
+        let url = build_url(&self.base_url, path, &[]);
+        log::debug!("Requesting POST: {url}");
+
+        let rate_keys = Some(vec![WEBULL_REST_RATE_KEY.to_string()]);
+        let response = self
+            .client
+            .post(
+                url,
+                None,
+                Some(headers),
+                Some(body.as_bytes().to_vec()),
+                None,
+                rate_keys,
+            )
+            .await?;
+
+        let status = response.status.as_u16();
+        let response_body = String::from_utf8_lossy(&response.body).to_string();
+
+        if response.status.is_success() {
+            log::trace!("{response_body}");
+            return Ok(response_body);
+        }
+
+        let (code, message) =
+            serde_json::from_str::<WebullErrorResponse>(&response_body).map_or_else(
+                |_| ("HTTP_STATUS".to_string(), response_body.clone()),
+                |e| (e.error_code, e.message),
+            );
+        let retry_after_secs = response
+            .headers
+            .get("retry-after")
+            .and_then(|value| parse_retry_after(value, jiff::Timestamp::now()))
+            .map(|delay| delay.as_secs());
+
+        let error = Error::ApiError {
+            status,
+            code,
+            message,
+            retry_after_secs,
+        };
+
+        if error.is_retryable() {
+            log::warn!("Webull API error [{status}]: retrying");
+        } else {
+            log::error!("Webull API error: {error}");
+        }
+
+        Err(error)
+    }
+
     /// Returns historical bars ending at `end_time_ms`, newest first.
     ///
     /// The API returns at most `count` bars at or before `end_time_ms` and
@@ -309,6 +428,56 @@ impl WebullHttpClient {
         let body = self.signed_get(TICK_PATH, &query).await?;
         let response: WebullTickResponse = serde_json::from_str(&body)?;
         Ok(response.result)
+    }
+
+    /// Returns a page of stock/ETF instrument profiles.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    pub async fn get_stock_instruments(
+        &self,
+        category: &str,
+        symbols: Option<&str>,
+        status: Option<&str>,
+        sub_category: Option<&str>,
+        pagination_key: Option<&str>,
+    ) -> Result<WebullInstrumentPage> {
+        let mut query = vec![("category".to_string(), category.to_string())];
+        push_optional_query(&mut query, "symbols", symbols);
+        push_optional_query(&mut query, "status", status);
+        push_optional_query(&mut query, "sub_category", sub_category);
+        push_optional_query(&mut query, "pagination_key", pagination_key);
+
+        let body = self.signed_get(STOCK_INSTRUMENTS_PATH, &query).await?;
+        Ok(serde_json::from_str(&body)?)
+    }
+
+    /// Returns a page of crypto instrument profiles.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    pub async fn get_crypto_instruments(
+        &self,
+        category: &str,
+        symbols: Option<&str>,
+        status: Option<&str>,
+        pagination_key: Option<&str>,
+    ) -> Result<WebullCryptoInstrumentPage> {
+        let mut query = vec![("category".to_string(), category.to_string())];
+        push_optional_query(&mut query, "symbols", symbols);
+        push_optional_query(&mut query, "status", status);
+        push_optional_query(&mut query, "pagination_key", pagination_key);
+
+        let body = self.signed_get(CRYPTO_INSTRUMENTS_PATH, &query).await?;
+        Ok(serde_json::from_str(&body)?)
+    }
+}
+
+fn push_optional_query(query: &mut Vec<(String, String)>, key: &str, value: Option<&str>) {
+    if let Some(value) = value.filter(|value| !value.is_empty()) {
+        query.push((key.to_string(), value.to_string()));
     }
 }
 
@@ -471,5 +640,27 @@ mod tests {
     fn test_build_url_without_query() {
         let url = build_url("https://api.webull.com", "/path", &[]);
         assert_eq!(url, "https://api.webull.com/path");
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_get_stock_instruments_signs_and_parses() {
+        let body = r#"{"data":[{"name":"Apple Inc","instrument_id":"913256135","category":"US_STOCK","symbol":"AAPL","lot_size":"1","currency":"USD"}],"pagination_key":null}"#;
+        let (base_url, requests) = testing::start(vec![(200, body.to_string())]);
+        let client = test_client(&base_url);
+
+        let page = client
+            .get_stock_instruments("US_STOCK", Some("AAPL"), None, None, None)
+            .await
+            .expect("fetches instruments");
+
+        assert_eq!(page.data.len(), 1);
+        assert_eq!(page.data[0].symbol, "AAPL");
+
+        let request = requests.recv().expect("captures request");
+        assert!(request.contains("GET /trading/instruments/stocks/profiles/list?"));
+        assert!(request.contains("category=US_STOCK"));
+        assert!(request.contains("symbols=AAPL"));
+        assert!(request.contains("x-signature:"));
     }
 }

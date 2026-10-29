@@ -30,6 +30,27 @@ pub const SNAPSHOT_PATH: &str = "/openapi/market-data/stock/snapshot";
 /// Path for the trade tick endpoint.
 pub const TICK_PATH: &str = "/openapi/market-data/stock/tick";
 
+/// Production MQTT broker host for the Data Streaming API.
+pub const WEBULL_MQTT_HOST: &str = "data-api.webull.com";
+
+/// Production MQTT TCP port.
+pub const WEBULL_MQTT_PORT: u16 = 1883;
+
+/// Sandbox MQTT broker host.
+pub const WEBULL_MQTT_SANDBOX_HOST: &str = "data-api.sandbox.webull.com";
+
+/// Streaming subscribe endpoint (HTTP control plane for MQTT).
+pub const STREAMING_SUBSCRIBE_PATH: &str = "/openapi/market-data/streaming/subscribe";
+
+/// Streaming unsubscribe endpoint (HTTP control plane for MQTT).
+pub const STREAMING_UNSUBSCRIBE_PATH: &str = "/openapi/market-data/streaming/unsubscribe";
+
+/// Stock/ETF instrument profiles (paginated discovery).
+pub const STOCK_INSTRUMENTS_PATH: &str = "/trading/instruments/stocks/profiles/list";
+
+/// Crypto instrument profiles (paginated discovery).
+pub const CRYPTO_INSTRUMENTS_PATH: &str = "/trading/instruments/crypto/profiles/list";
+
 /// Extracts the signing host from a base URL (scheme stripped, path dropped).
 #[must_use]
 pub fn host_from_base_url(base_url: &str) -> String {
@@ -40,4 +61,23 @@ pub fn host_from_base_url(base_url: &str) -> String {
         .next()
         .unwrap_or(without_scheme)
         .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_host_from_base_url() {
+        assert_eq!(
+            host_from_base_url("https://api.webull.com"),
+            "api.webull.com"
+        );
+        assert_eq!(
+            host_from_base_url("https://api.sandbox.webull.com/"),
+            "api.sandbox.webull.com"
+        );
+    }
 }

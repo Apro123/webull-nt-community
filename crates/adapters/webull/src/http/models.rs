@@ -18,7 +18,7 @@
 //! The API preserves precision by representing all numeric values as
 //! strings; callers convert them to the Nautilus fixed-point types.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// A historical OHLCV bar as returned by `/openapi/market-data/stock/bars`.
 ///
@@ -119,6 +119,216 @@ pub struct WebullErrorResponse {
     pub error_code: String,
 }
 
+
+/// A Level-2 depth book (REST Non-Display or streaming `QUOTE` payloads).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct WebullDepthBook {
+    /// The instrument symbol.
+    pub symbol: String,
+    /// The venue's internal instrument identifier.
+    #[serde(default, rename = "instrument_id")]
+    pub instrument_id: String,
+    /// Quote time as a millisecond Unix timestamp.
+    #[serde(default, deserialize_with = "deserialize_millis")]
+    pub quote_time: u64,
+    /// Ask levels, best ask first.
+    #[serde(default)]
+    pub asks: Vec<WebullDepthLevel>,
+    /// Bid levels, best bid first.
+    #[serde(default)]
+    pub bids: Vec<WebullDepthLevel>,
+}
+
+/// A single price level in a depth book.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct WebullDepthLevel {
+    /// Price at this level.
+    pub price: String,
+    /// Aggregated size at this level.
+    pub size: String,
+    /// Optional per-participant order queue (stocks TotalView).
+    #[serde(default)]
+    pub order: Vec<WebullDepthOrder>,
+    /// Optional broker attribution.
+    #[serde(default)]
+    pub broker: Vec<WebullDepthBroker>,
+}
+
+/// Market-participant order queue entry within a depth level.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct WebullDepthOrder {
+    /// Market participant ID, e.g. `NSDQ`.
+    #[serde(default)]
+    pub mpid: String,
+    /// Size attributed to the participant.
+    #[serde(default)]
+    pub size: String,
+}
+
+/// Broker attribution entry within a depth level.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct WebullDepthBroker {
+    /// Broker identifier.
+    #[serde(default)]
+    pub bid: String,
+    /// Broker display name.
+    #[serde(default)]
+    pub name: String,
+}
+
+/// Request body for `POST /openapi/market-data/streaming/subscribe`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct WebullStreamSubscribeRequest {
+    /// MQTT ClientId / session identifier.
+    pub session_id: String,
+    /// Symbols to subscribe, max 100.
+    pub symbols: Vec<String>,
+    /// Asset category, e.g. `US_STOCK`.
+    pub category: String,
+    /// Data types: `QUOTE`, `SNAPSHOT`, `TICK`.
+    pub sub_types: Vec<String>,
+    /// Whether to grab an initial snapshot (`"true"` / `"false"`).
+    pub grab: String,
+    /// Optional LV2 depth (default 10, stocks max 50).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub depth: Option<u32>,
+    /// Whether overnight session depth is required.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub overnight_required: Option<bool>,
+}
+
+/// Request body for `POST /openapi/market-data/streaming/unsubscribe`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct WebullStreamUnsubscribeRequest {
+    /// MQTT ClientId / session identifier.
+    pub session_id: String,
+    /// Symbols to unsubscribe.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub symbols: Vec<String>,
+    /// Asset category.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub category: String,
+    /// Data types to drop.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sub_types: Vec<String>,
+    /// When true, drop every subscription for the session.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unsubscribe_all: Option<bool>,
+}
+
+/// Deserializes a millisecond timestamp from either a JSON number or string.
+fn deserialize_millis<'de, D>(deserializer: D) -> std::result::Result<u64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct MillisVisitor;
+
+    impl<'de> serde::de::Visitor<'de> for MillisVisitor {
+        type Value = u64;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str("a millisecond timestamp as u64 or string")
+        }
+
+        fn visit_u64<E: serde::de::Error>(self, value: u64) -> std::result::Result<u64, E> {
+            Ok(value)
+        }
+
+        fn visit_i64<E: serde::de::Error>(self, value: i64) -> std::result::Result<u64, E> {
+            u64::try_from(value).map_err(E::custom)
+        }
+
+        fn visit_str<E: serde::de::Error>(self, value: &str) -> std::result::Result<u64, E> {
+            value.parse::<u64>().map_err(E::custom)
+        }
+    }
+
+    deserializer.deserialize_any(MillisVisitor)
+}
+
+/// A paginated stock/ETF instrument profile page.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct WebullInstrumentPage {
+    /// Instrument profiles on this page.
+    #[serde(default)]
+    pub data: Vec<WebullStockInstrument>,
+    /// Cursor for the next page, when more results remain.
+    #[serde(default)]
+    pub pagination_key: Option<String>,
+}
+
+/// A stock/ETF instrument profile from `/trading/instruments/stocks/profiles/list`.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct WebullStockInstrument {
+    /// Human-readable instrument name.
+    #[serde(default)]
+    pub name: Option<String>,
+    /// The venue's internal instrument identifier.
+    pub instrument_id: String,
+    /// Exchange code when provided by the venue.
+    #[serde(default)]
+    pub exchange_code: Option<String>,
+    /// Instrument category, e.g. `US_STOCK`.
+    pub category: String,
+    /// Trading symbol, e.g. `AAPL`.
+    pub symbol: String,
+    /// Listing status when provided, e.g. `ACTIVE`.
+    #[serde(default)]
+    pub status: Option<String>,
+    /// Rounded lot size as a decimal string.
+    #[serde(default)]
+    pub lot_size: Option<String>,
+    /// Quote currency code when provided, e.g. `USD`.
+    #[serde(default)]
+    pub currency: Option<String>,
+    /// Sub-category when provided, e.g. `ETF`.
+    #[serde(default)]
+    pub sub_category: Option<String>,
+}
+
+/// A paginated crypto instrument profile page.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct WebullCryptoInstrumentPage {
+    /// Instrument profiles on this page.
+    #[serde(default)]
+    pub data: Vec<WebullCryptoInstrument>,
+    /// Cursor for the next page, when more results remain.
+    #[serde(default)]
+    pub pagination_key: Option<String>,
+}
+
+/// A crypto instrument profile from `/trading/instruments/crypto/profiles/list`.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct WebullCryptoInstrument {
+    /// Human-readable instrument name.
+    #[serde(default)]
+    pub name: Option<String>,
+    /// The venue's internal instrument identifier.
+    pub instrument_id: String,
+    /// Trading symbol, e.g. `BTCUSD`.
+    pub symbol: String,
+    /// Instrument category, e.g. `CRYPTO`.
+    pub category: String,
+    /// Minimum price increment as a decimal string.
+    #[serde(default)]
+    pub price_step: Option<String>,
+    /// Size increment / lot size as a decimal string.
+    #[serde(default)]
+    pub lot_size: Option<String>,
+    /// Quote currency code when provided.
+    #[serde(default)]
+    pub currency: Option<String>,
+    /// Minimum trade quantity as a decimal string.
+    #[serde(default)]
+    pub min_trade_qty: Option<String>,
+    /// Maximum trade quantity as a decimal string.
+    #[serde(default)]
+    pub max_trade_qty: Option<String>,
+    /// Listing status when provided.
+    #[serde(default)]
+    pub status: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -175,5 +385,57 @@ mod tests {
 
         assert_eq!(error.error_code, "UNAUTHORIZED");
         assert!(error.message.contains("x-signature"));
+    }
+
+    #[rstest]
+    fn test_stock_instrument_page_deserializes() {
+        let json = r#"{
+            "data": [{
+                "name": "Apple Inc",
+                "instrument_id": "913256135",
+                "exchange_code": "NAS",
+                "category": "US_STOCK",
+                "symbol": "AAPL",
+                "status": "ACTIVE",
+                "lot_size": "1",
+                "currency": "USD",
+                "sub_category": "STOCK",
+                "extra_field": "ignored"
+            }],
+            "pagination_key": "next-page"
+        }"#;
+
+        let page: WebullInstrumentPage = serde_json::from_str(json).expect("parses page");
+
+        assert_eq!(page.data.len(), 1);
+        assert_eq!(page.data[0].symbol, "AAPL");
+        assert_eq!(page.data[0].instrument_id, "913256135");
+        assert_eq!(page.data[0].lot_size.as_deref(), Some("1"));
+        assert_eq!(page.pagination_key.as_deref(), Some("next-page"));
+    }
+
+    #[rstest]
+    fn test_crypto_instrument_page_deserializes() {
+        let json = r#"{
+            "data": [{
+                "name": "Bitcoin",
+                "instrument_id": "crypto-1",
+                "symbol": "BTCUSD",
+                "category": "CRYPTO",
+                "price_step": "0.01",
+                "lot_size": "0.0001",
+                "currency": "USD",
+                "min_trade_qty": "0.0001",
+                "max_trade_qty": "100"
+            }],
+            "pagination_key": null
+        }"#;
+
+        let page: WebullCryptoInstrumentPage = serde_json::from_str(json).expect("parses page");
+
+        assert_eq!(page.data.len(), 1);
+        assert_eq!(page.data[0].symbol, "BTCUSD");
+        assert_eq!(page.data[0].price_step.as_deref(), Some("0.01"));
+        assert!(page.pagination_key.is_none());
     }
 }

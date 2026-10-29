@@ -27,11 +27,17 @@ use crate::{
     common::{
         consts::{WEBULL_REST_QUOTA, WEBULL_REST_RATE_KEY},
         credential::Credential,
-        urls::{BARS_PATH, SNAPSHOT_PATH, TICK_PATH, WEBULL_HTTP_BASE_URL, WEBULL_HTTP_HOST},
+        urls::{
+            BARS_PATH, CRYPTO_INSTRUMENTS_PATH, SNAPSHOT_PATH, STOCK_INSTRUMENTS_PATH, TICK_PATH,
+            WEBULL_HTTP_BASE_URL, WEBULL_HTTP_HOST,
+        },
     },
     http::{
         error::{Error, Result},
-        models::{WebullBar, WebullErrorResponse, WebullSnapshot, WebullTick, WebullTickResponse},
+        models::{
+            WebullBar, WebullCryptoInstrumentPage, WebullErrorResponse, WebullInstrumentPage,
+            WebullSnapshot, WebullTick, WebullTickResponse,
+        },
     },
     signing::{SIGNATURE_ALGORITHM, SIGNATURE_VERSION, sign_request},
 };
@@ -310,6 +316,56 @@ impl WebullHttpClient {
         let response: WebullTickResponse = serde_json::from_str(&body)?;
         Ok(response.result)
     }
+
+    /// Returns a page of stock/ETF instrument profiles.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    pub async fn get_stock_instruments(
+        &self,
+        category: &str,
+        symbols: Option<&str>,
+        status: Option<&str>,
+        sub_category: Option<&str>,
+        pagination_key: Option<&str>,
+    ) -> Result<WebullInstrumentPage> {
+        let mut query = vec![("category".to_string(), category.to_string())];
+        push_optional_query(&mut query, "symbols", symbols);
+        push_optional_query(&mut query, "status", status);
+        push_optional_query(&mut query, "sub_category", sub_category);
+        push_optional_query(&mut query, "pagination_key", pagination_key);
+
+        let body = self.signed_get(STOCK_INSTRUMENTS_PATH, &query).await?;
+        Ok(serde_json::from_str(&body)?)
+    }
+
+    /// Returns a page of crypto instrument profiles.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    pub async fn get_crypto_instruments(
+        &self,
+        category: &str,
+        symbols: Option<&str>,
+        status: Option<&str>,
+        pagination_key: Option<&str>,
+    ) -> Result<WebullCryptoInstrumentPage> {
+        let mut query = vec![("category".to_string(), category.to_string())];
+        push_optional_query(&mut query, "symbols", symbols);
+        push_optional_query(&mut query, "status", status);
+        push_optional_query(&mut query, "pagination_key", pagination_key);
+
+        let body = self.signed_get(CRYPTO_INSTRUMENTS_PATH, &query).await?;
+        Ok(serde_json::from_str(&body)?)
+    }
+}
+
+fn push_optional_query(query: &mut Vec<(String, String)>, key: &str, value: Option<&str>) {
+    if let Some(value) = value.filter(|value| !value.is_empty()) {
+        query.push((key.to_string(), value.to_string()));
+    }
 }
 
 /// Builds the request URL with a percent-encoded query string.
@@ -471,5 +527,27 @@ mod tests {
     fn test_build_url_without_query() {
         let url = build_url("https://api.webull.com", "/path", &[]);
         assert_eq!(url, "https://api.webull.com/path");
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_get_stock_instruments_signs_and_parses() {
+        let body = r#"{"data":[{"name":"Apple Inc","instrument_id":"913256135","category":"US_STOCK","symbol":"AAPL","lot_size":"1","currency":"USD"}],"pagination_key":null}"#;
+        let (base_url, requests) = testing::start(vec![(200, body.to_string())]);
+        let client = test_client(&base_url);
+
+        let page = client
+            .get_stock_instruments("US_STOCK", Some("AAPL"), None, None, None)
+            .await
+            .expect("fetches instruments");
+
+        assert_eq!(page.data.len(), 1);
+        assert_eq!(page.data[0].symbol, "AAPL");
+
+        let request = requests.recv().expect("captures request");
+        assert!(request.contains("GET /trading/instruments/stocks/profiles/list?"));
+        assert!(request.contains("category=US_STOCK"));
+        assert!(request.contains("symbols=AAPL"));
+        assert!(request.contains("x-signature:"));
     }
 }

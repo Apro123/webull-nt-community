@@ -119,6 +119,89 @@ pub struct WebullErrorResponse {
     pub error_code: String,
 }
 
+/// A paginated stock/ETF instrument profile page.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct WebullInstrumentPage {
+    /// Instrument profiles on this page.
+    #[serde(default)]
+    pub data: Vec<WebullStockInstrument>,
+    /// Cursor for the next page, when more results remain.
+    #[serde(default)]
+    pub pagination_key: Option<String>,
+}
+
+/// A stock/ETF instrument profile from `/trading/instruments/stocks/profiles/list`.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct WebullStockInstrument {
+    /// Human-readable instrument name.
+    #[serde(default)]
+    pub name: Option<String>,
+    /// The venue's internal instrument identifier.
+    pub instrument_id: String,
+    /// Exchange code when provided by the venue.
+    #[serde(default)]
+    pub exchange_code: Option<String>,
+    /// Instrument category, e.g. `US_STOCK`.
+    pub category: String,
+    /// Trading symbol, e.g. `AAPL`.
+    pub symbol: String,
+    /// Listing status when provided, e.g. `ACTIVE`.
+    #[serde(default)]
+    pub status: Option<String>,
+    /// Rounded lot size as a decimal string.
+    #[serde(default)]
+    pub lot_size: Option<String>,
+    /// Quote currency code when provided, e.g. `USD`.
+    #[serde(default)]
+    pub currency: Option<String>,
+    /// Sub-category when provided, e.g. `ETF`.
+    #[serde(default)]
+    pub sub_category: Option<String>,
+}
+
+/// A paginated crypto instrument profile page.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct WebullCryptoInstrumentPage {
+    /// Instrument profiles on this page.
+    #[serde(default)]
+    pub data: Vec<WebullCryptoInstrument>,
+    /// Cursor for the next page, when more results remain.
+    #[serde(default)]
+    pub pagination_key: Option<String>,
+}
+
+/// A crypto instrument profile from `/trading/instruments/crypto/profiles/list`.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct WebullCryptoInstrument {
+    /// Human-readable instrument name.
+    #[serde(default)]
+    pub name: Option<String>,
+    /// The venue's internal instrument identifier.
+    pub instrument_id: String,
+    /// Trading symbol, e.g. `BTCUSD`.
+    pub symbol: String,
+    /// Instrument category, e.g. `CRYPTO`.
+    pub category: String,
+    /// Minimum price increment as a decimal string.
+    #[serde(default)]
+    pub price_step: Option<String>,
+    /// Size increment / lot size as a decimal string.
+    #[serde(default)]
+    pub lot_size: Option<String>,
+    /// Quote currency code when provided.
+    #[serde(default)]
+    pub currency: Option<String>,
+    /// Minimum trade quantity as a decimal string.
+    #[serde(default)]
+    pub min_trade_qty: Option<String>,
+    /// Maximum trade quantity as a decimal string.
+    #[serde(default)]
+    pub max_trade_qty: Option<String>,
+    /// Listing status when provided.
+    #[serde(default)]
+    pub status: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -175,5 +258,57 @@ mod tests {
 
         assert_eq!(error.error_code, "UNAUTHORIZED");
         assert!(error.message.contains("x-signature"));
+    }
+
+    #[rstest]
+    fn test_stock_instrument_page_deserializes() {
+        let json = r#"{
+            "data": [{
+                "name": "Apple Inc",
+                "instrument_id": "913256135",
+                "exchange_code": "NAS",
+                "category": "US_STOCK",
+                "symbol": "AAPL",
+                "status": "ACTIVE",
+                "lot_size": "1",
+                "currency": "USD",
+                "sub_category": "STOCK",
+                "extra_field": "ignored"
+            }],
+            "pagination_key": "next-page"
+        }"#;
+
+        let page: WebullInstrumentPage = serde_json::from_str(json).expect("parses page");
+
+        assert_eq!(page.data.len(), 1);
+        assert_eq!(page.data[0].symbol, "AAPL");
+        assert_eq!(page.data[0].instrument_id, "913256135");
+        assert_eq!(page.data[0].lot_size.as_deref(), Some("1"));
+        assert_eq!(page.pagination_key.as_deref(), Some("next-page"));
+    }
+
+    #[rstest]
+    fn test_crypto_instrument_page_deserializes() {
+        let json = r#"{
+            "data": [{
+                "name": "Bitcoin",
+                "instrument_id": "crypto-1",
+                "symbol": "BTCUSD",
+                "category": "CRYPTO",
+                "price_step": "0.01",
+                "lot_size": "0.0001",
+                "currency": "USD",
+                "min_trade_qty": "0.0001",
+                "max_trade_qty": "100"
+            }],
+            "pagination_key": null
+        }"#;
+
+        let page: WebullCryptoInstrumentPage = serde_json::from_str(json).expect("parses page");
+
+        assert_eq!(page.data.len(), 1);
+        assert_eq!(page.data[0].symbol, "BTCUSD");
+        assert_eq!(page.data[0].price_step.as_deref(), Some("0.01"));
+        assert!(page.pagination_key.is_none());
     }
 }

@@ -72,6 +72,7 @@ environments = [
 ]
 exclude-newer = "7 days"
 exclude-newer-package = { ruff = "2026-10-01T19:00:00Z" }
+override-dependencies = ["certifi>=2026.10.19"]
 # Block sdist builds for every third-party package in python/uv.lock so
 # unexpected loss of wheel publishing fails `uv lock` instead of silently
 # building from source. Kept in sync with python/uv.lock by

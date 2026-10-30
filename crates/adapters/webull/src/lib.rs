@@ -54,6 +54,7 @@ pub mod data;
 pub mod factories;
 pub mod historical;
 pub mod http;
+pub mod providers;
 pub mod signing;
 
 #[cfg(feature = "python")]

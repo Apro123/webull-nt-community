@@ -30,6 +30,12 @@ pub const SNAPSHOT_PATH: &str = "/openapi/market-data/stock/snapshot";
 /// Path for the trade tick endpoint.
 pub const TICK_PATH: &str = "/openapi/market-data/stock/tick";
 
+/// Stock/ETF instrument profiles (paginated discovery).
+pub const STOCK_INSTRUMENTS_PATH: &str = "/trading/instruments/stocks/profiles/list";
+
+/// Crypto instrument profiles (paginated discovery).
+pub const CRYPTO_INSTRUMENTS_PATH: &str = "/trading/instruments/crypto/profiles/list";
+
 /// Extracts the signing host from a base URL (scheme stripped, path dropped).
 #[must_use]
 pub fn host_from_base_url(base_url: &str) -> String {

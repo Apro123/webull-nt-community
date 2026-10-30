@@ -56,6 +56,7 @@ pub mod historical;
 pub mod http;
 pub mod providers;
 pub mod signing;
+pub mod streaming;
 
 #[cfg(feature = "python")]
 pub mod python;

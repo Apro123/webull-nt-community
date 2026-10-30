@@ -18,7 +18,7 @@
 //! The API preserves precision by representing all numeric values as
 //! strings; callers convert them to the Nautilus fixed-point types.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// A historical OHLCV bar as returned by `/openapi/market-data/stock/bars`.
 ///
@@ -117,6 +117,132 @@ pub struct WebullErrorResponse {
     /// The venue error code.
     #[serde(rename = "error_code")]
     pub error_code: String,
+}
+
+/// A Level-2 depth book (REST Non-Display or streaming `QUOTE` payloads).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct WebullDepthBook {
+    /// The instrument symbol.
+    pub symbol: String,
+    /// The venue's internal instrument identifier.
+    #[serde(default, rename = "instrument_id")]
+    pub instrument_id: String,
+    /// Quote time as a millisecond Unix timestamp.
+    #[serde(default, deserialize_with = "deserialize_millis")]
+    pub quote_time: u64,
+    /// Ask levels, best ask first.
+    #[serde(default)]
+    pub asks: Vec<WebullDepthLevel>,
+    /// Bid levels, best bid first.
+    #[serde(default)]
+    pub bids: Vec<WebullDepthLevel>,
+}
+
+/// A single price level in a depth book.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct WebullDepthLevel {
+    /// Price at this level.
+    pub price: String,
+    /// Aggregated size at this level.
+    pub size: String,
+    /// Optional per-participant order queue (stocks TotalView).
+    #[serde(default)]
+    pub order: Vec<WebullDepthOrder>,
+    /// Optional broker attribution.
+    #[serde(default)]
+    pub broker: Vec<WebullDepthBroker>,
+}
+
+/// Market-participant order queue entry within a depth level.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct WebullDepthOrder {
+    /// Market participant ID, e.g. `NSDQ`.
+    #[serde(default)]
+    pub mpid: String,
+    /// Size attributed to the participant.
+    #[serde(default)]
+    pub size: String,
+}
+
+/// Broker attribution entry within a depth level.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct WebullDepthBroker {
+    /// Broker identifier.
+    #[serde(default)]
+    pub bid: String,
+    /// Broker display name.
+    #[serde(default)]
+    pub name: String,
+}
+
+/// Request body for `POST /openapi/market-data/streaming/subscribe`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct WebullStreamSubscribeRequest {
+    /// MQTT ClientId / session identifier.
+    pub session_id: String,
+    /// Symbols to subscribe, max 100.
+    pub symbols: Vec<String>,
+    /// Asset category, e.g. `US_STOCK`.
+    pub category: String,
+    /// Data types: `QUOTE`, `SNAPSHOT`, `TICK`.
+    pub sub_types: Vec<String>,
+    /// Whether to grab an initial snapshot (`"true"` / `"false"`).
+    pub grab: String,
+    /// Optional LV2 depth (default 10, stocks max 50).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub depth: Option<u32>,
+    /// Whether overnight session depth is required.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub overnight_required: Option<bool>,
+}
+
+/// Request body for `POST /openapi/market-data/streaming/unsubscribe`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct WebullStreamUnsubscribeRequest {
+    /// MQTT ClientId / session identifier.
+    pub session_id: String,
+    /// Symbols to unsubscribe.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub symbols: Vec<String>,
+    /// Asset category.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub category: String,
+    /// Data types to drop.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sub_types: Vec<String>,
+    /// When true, drop every subscription for the session.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unsubscribe_all: Option<bool>,
+}
+
+/// Deserializes a millisecond timestamp from either a JSON number or string.
+fn deserialize_millis<'de, D>(deserializer: D) -> std::result::Result<u64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct MillisVisitor;
+
+    impl<'de> serde::de::Visitor<'de> for MillisVisitor {
+        type Value = u64;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str("a millisecond timestamp as u64 or string")
+        }
+
+        fn visit_u64<E: serde::de::Error>(self, value: u64) -> std::result::Result<u64, E> {
+            Ok(value)
+        }
+
+        fn visit_i64<E: serde::de::Error>(self, value: i64) -> std::result::Result<u64, E> {
+            u64::try_from(value).map_err(E::custom)
+        }
+
+        fn visit_str<E: serde::de::Error>(self, value: &str) -> std::result::Result<u64, E> {
+            value.parse::<u64>().map_err(E::custom)
+        }
+    }
+
+    deserializer.deserialize_any(MillisVisitor)
 }
 
 /// A paginated stock/ETF instrument profile page.

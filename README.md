@@ -14,8 +14,9 @@ read the [official repository](https://github.com/nautechsystems/nautilus_trader
 ## Webull status
 
 Feature universe: [Market Data API](https://developer.webull.com/apis/docs/market-data-api/overview),
-[Trade API](https://developer.webull.com/apis/docs/trade-api/overview). Scope so far is **US
-stocks/ETFs market data only**.
+[Trade API](https://developer.webull.com/apis/docs/trade-api/overview). Scope is **US market data** (stocks/ETFs plus Non-Display options, futures,
+crypto, and event-contract REST/stream surfaces). Live polling remains stock/ETF
+oriented; Trade API is still out of scope.
 
 ### Done
 
@@ -28,19 +29,21 @@ stocks/ETFs market data only**.
 | Live data client (`WebullDataClient`) | Polling `DataClient` for quotes/trades/bars, registered through `WebullDataClientFactory` and `WebullDataClientConfig`                        |
 | Python bindings                       | `WebullHistoricalClient`, `WebullDataClientConfig`, `WebullDataClientFactory`, `Timespan`                                                     |
 | Backtest example                      | [`examples/backtest/equity_ema_cross_aapl_webull.py`](examples/backtest/equity_ema_cross_aapl_webull.py)                                      |
+| Instrument discovery                  | `WebullInstrumentProvider` loads stock/ETF and crypto profiles into the cache via `/trading/instruments/*/profiles/list`                      |
+| Order book depth (REST)               | `get_stock_depths` / `get_futures_depths` / `get_event_depths` → Clear+Add `OrderBookDeltas` (TotalView / overnight entitlements as required) |
+| Multi-asset REST snapshots/ticks      | Options, futures, crypto, and event-contract Non-Display paths via `get_snapshots_for_category` / `get_ticks_for_category`                    |
+| Market data streaming (MQTT)          | `WebullStreamingClient` over MQTT 3.1.1 with HTTP subscribe/unsubscribe control plane and protobuf parsers                                    |
 | Catalog bulk download                 | [`scripts/webull_bulk_download.py`](scripts/webull_bulk_download.py), incremental gap fill into a Parquet catalog                             |
 | Tests                                 | Rust unit + mock-server integration tests; Python unit tests; live sandbox smoke tests (skipped without credentials)                          |
 | Documentation                         | [Adapter guide](docs/integrations/webull.md), [data guide](docs/integrations/webull_data.md)                                                  |
 
 ### Needs to be done
 
-| Area                                            | Status      | Notes                                                                |
-| :---------------------------------------------- | :---------- | :------------------------------------------------------------------- |
-| Market data streaming (MQTT/WebSocket)          | Not started | Real-time push instead of REST polling                               |
-| Options, futures, crypto, event contract data   | Not started | Categories beyond stocks/ETFs                                        |
-| Order book depth (L2, overnight depth)          | Not started | Requires the venue's TotalView entitlements                          |
-| Instrument discovery (`InstrumentProvider`)     | Not started | Live subscriptions and bars need instruments pre-loaded in the cache |
-| Trade API (orders, positions, balances, events) | Not started | Out of scope for this fork's current phase                           |
+| Area                                            | Status      | Notes                                                                                |
+| :---------------------------------------------- | :---------- | :----------------------------------------------------------------------------------- |
+| Options/futures/crypto live DataClient wiring   | Partial     | REST/stream clients exist; polling `WebullDataClient` is still US stock/ETF oriented |
+| Event-contract first-class instruments          | Not started | Depth/tick REST + stream topics exist; no `InstrumentProvider` mapping yet           |
+| Trade API (orders, positions, balances, events) | Not started | Out of scope for this fork's current phase                                           |
 
 ## Getting started
 

@@ -42,7 +42,8 @@ the adapter sends the token on every request.
 
 ## Live data
 
-The Webull OpenAPI is request/response only, so `WebullDataClient` polls the
+HTTP polling remains available via `WebullDataClient`. For push data, use
+`WebullStreamingClient` (MQTT) with HTTP subscribe/unsubscribe. `WebullDataClient` polls the
 snapshot, tick, and bar endpoints every `poll_interval_secs` (default 5) for
 the instruments subscribed through the engine. Instruments must already be
 loaded in the cache (the venue exposes no instrument discovery endpoint);

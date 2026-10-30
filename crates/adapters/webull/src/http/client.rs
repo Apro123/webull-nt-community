@@ -42,6 +42,8 @@ use crate::{
     signing::{SIGNATURE_ALGORITHM, SIGNATURE_VERSION, sign_request},
 };
 
+const CONTENT_TYPE_JSON: &str = "application/json";
+
 /// Transport configuration for the Webull HTTP client.
 #[derive(Clone, Debug)]
 pub struct WebullHttpConfig {
@@ -239,6 +241,116 @@ impl WebullHttpClient {
         Err(error)
     }
 
+    /// Sends a signed POST request with a JSON body and returns the response body.
+    ///
+    /// The body is included in the HMAC-SHA1 signature (MD5 digest) and sent with
+    /// `Content-Type: application/json`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the API returns a non-success status.
+    pub async fn signed_post(&self, path: &str, body: &str) -> Result<String> {
+        RetryManager::new(self.retry.clone())
+            .invocation(
+                "Webull POST",
+                || self.signed_post_once(path, body),
+                Error::is_retryable,
+                Error::Retry,
+            )
+            .retry_delay(&Error::retry_delay)
+            .execute()
+            .await
+    }
+
+    /// Makes a single signed POST attempt, re-signing with a fresh timestamp and nonce.
+    async fn signed_post_once(&self, path: &str, body: &str) -> Result<String> {
+        let timestamp = current_utc_timestamp();
+        let nonce = UUID4::new().as_str().replace('-', "");
+        let signature = sign_request(
+            self.credential.api_secret(),
+            &self.host,
+            path,
+            &[],
+            Some(body),
+            self.credential.api_key(),
+            &timestamp,
+            &nonce,
+        );
+
+        let mut headers = HashMap::new();
+        headers.insert(
+            "x-app-key".to_string(),
+            self.credential.api_key().to_string(),
+        );
+        headers.insert(
+            "x-signature-algorithm".to_string(),
+            SIGNATURE_ALGORITHM.to_string(),
+        );
+        headers.insert(
+            "x-signature-version".to_string(),
+            SIGNATURE_VERSION.to_string(),
+        );
+        headers.insert("x-signature-nonce".to_string(), nonce);
+        headers.insert("x-version".to_string(), "v2".to_string());
+        headers.insert("x-timestamp".to_string(), timestamp);
+        headers.insert("host".to_string(), self.host.clone());
+        headers.insert("x-signature".to_string(), signature);
+        headers.insert("Content-Type".to_string(), CONTENT_TYPE_JSON.to_string());
+        if let Some(token) = self.credential.access_token() {
+            headers.insert("x-access-token".to_string(), token.to_string());
+        }
+
+        let url = build_url(&self.base_url, path, &[]);
+        log::debug!("Requesting POST: {url}");
+
+        let rate_keys = Some(vec![WEBULL_REST_RATE_KEY.to_string()]);
+        let response = self
+            .client
+            .post(
+                url,
+                None,
+                Some(headers),
+                Some(body.as_bytes().to_vec()),
+                None,
+                rate_keys,
+            )
+            .await?;
+
+        let status = response.status.as_u16();
+        let response_body = String::from_utf8_lossy(&response.body).to_string();
+
+        if response.status.is_success() {
+            log::trace!("{response_body}");
+            return Ok(response_body);
+        }
+
+        let (code, message) = serde_json::from_str::<WebullErrorResponse>(&response_body)
+            .map_or_else(
+                |_| ("HTTP_STATUS".to_string(), response_body.clone()),
+                |e| (e.error_code, e.message),
+            );
+        let retry_after_secs = response
+            .headers
+            .get("retry-after")
+            .and_then(|value| parse_retry_after(value, jiff::Timestamp::now()))
+            .map(|delay| delay.as_secs());
+
+        let error = Error::ApiError {
+            status,
+            code,
+            message,
+            retry_after_secs,
+        };
+
+        if error.is_retryable() {
+            log::warn!("Webull API error [{status}]: retrying");
+        } else {
+            log::error!("Webull API error: {error}");
+        }
+
+        Err(error)
+    }
+
     /// Returns historical bars ending at `end_time_ms`, newest first.
     ///
     /// The API returns at most `count` bars at or before `end_time_ms` and
@@ -400,9 +512,8 @@ fn current_utc_timestamp() -> String {
 mod tests {
     use rstest::rstest;
 
-    use crate::common::testing;
-
     use super::*;
+    use crate::common::testing;
 
     fn test_client(base_url: &str) -> WebullHttpClient {
         let config = WebullHttpConfig {

@@ -6,7 +6,7 @@
 > Webull product. Webull and NautilusTrader are trademarks of their respective owners.
 
 A public fork of [nautilus_trader](https://github.com/nautechsystems/nautilus_trader) (based on
-release `2.0.0rc7` (Rust crates `0.66.0`)) that adds a **Webull market data adapter**. Everything else is unmodified
+release `2.0.0rc8` (Rust crates `0.67.0`)) that adds a **Webull market data adapter**. Everything else is unmodified
 upstream code. For the engine itself - architecture, installation, tutorials, security policy -
 read the [official repository](https://github.com/nautechsystems/nautilus_trader) and the
 [documentation](https://nautilustrader.io/docs/); they are not duplicated here.
@@ -76,6 +76,12 @@ bash scripts/clean-rust-incremental.bash --apply  # delete incremental/ dirs
 ```
 
 For a full wipe of `target/` (and other build dirs), use `make clean-builds`.
+
+## Versioning and releases
+
+This fork tracks upstream NautilusTrader releases and rebases the Webull adapter onto them.
+For the engine's versioning policy, branch model, and release cadence, see the
+[upstream README](https://github.com/nautechsystems/nautilus_trader/blob/master/README.md#versioning-and-releases).
 
 ## License
 

@@ -28,7 +28,7 @@ use async_trait::async_trait;
 use jiff::Timestamp;
 use nautilus_common::{
     cache::CacheView,
-    clients::DataClient,
+    clients::{DataClient, execute_bar_subscriptions, execute_instrument_subscriptions},
     live::{dst::time, runner::get_data_event_sender, sender::EventSender},
     messages::{
         DataEvent,
@@ -489,73 +489,85 @@ impl DataClient for WebullDataClient {
     }
 
     fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
-        let spec = self.resolve_instrument(cmd.instrument_id)?;
-        let mut subs = self.state.subs.lock();
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let spec = self.resolve_instrument(instrument_id)?;
+            let mut subs = self.state.subs.lock();
 
-        if !subs.quotes.contains(&spec) {
-            subs.quotes.push(spec);
-        }
+            if !subs.quotes.contains(&spec) {
+                subs.quotes.push(spec);
+            }
 
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
-        let mut subs = self.state.subs.lock();
-        subs.quotes
-            .retain(|spec| spec.instrument_id != cmd.instrument_id);
-        Ok(())
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let mut subs = self.state.subs.lock();
+            subs.quotes
+                .retain(|spec| spec.instrument_id != instrument_id);
+            Ok(())
+        })
     }
 
     fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
-        let spec = self.resolve_instrument(cmd.instrument_id)?;
-        let mut subs = self.state.subs.lock();
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let spec = self.resolve_instrument(instrument_id)?;
+            let mut subs = self.state.subs.lock();
 
-        if !subs.trades.contains(&spec) {
-            subs.trades.push(spec);
-        }
+            if !subs.trades.contains(&spec) {
+                subs.trades.push(spec);
+            }
 
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
-        let mut subs = self.state.subs.lock();
-        subs.trades
-            .retain(|spec| spec.instrument_id != cmd.instrument_id);
-        Ok(())
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let mut subs = self.state.subs.lock();
+            subs.trades
+                .retain(|spec| spec.instrument_id != instrument_id);
+            Ok(())
+        })
     }
 
     fn subscribe_bars(&mut self, cmd: SubscribeBars) -> anyhow::Result<()> {
-        let Some(timespan) = timespan_for_bar_spec(
-            cmd.bar_type.spec().step.get() as u32,
-            cmd.bar_type.spec().aggregation,
-        ) else {
-            anyhow::bail!(
-                "Webull has no native timespan for the bar specification {:?}",
-                cmd.bar_type.spec()
-            );
-        };
+        execute_bar_subscriptions(&cmd.bar_types, |bar_type| {
+            let Some(timespan) = timespan_for_bar_spec(
+                bar_type.spec().step.get() as u32,
+                bar_type.spec().aggregation,
+            ) else {
+                anyhow::bail!(
+                    "Webull has no native timespan for the bar specification {:?}",
+                    bar_type.spec()
+                );
+            };
 
-        let (price_precision, size_precision) =
-            self.resolve_precisions(cmd.bar_type.instrument_id())?;
-        let spec = BarSpec {
-            bar_type: cmd.bar_type,
-            timespan,
-            price_precision,
-            size_precision,
-        };
-        let mut subs = self.state.subs.lock();
+            let (price_precision, size_precision) =
+                self.resolve_precisions(bar_type.instrument_id())?;
+            let spec = BarSpec {
+                bar_type,
+                timespan,
+                price_precision,
+                size_precision,
+            };
+            let mut subs = self.state.subs.lock();
 
-        if !subs.bars.contains(&spec) {
-            subs.bars.push(spec);
-        }
+            if !subs.bars.contains(&spec) {
+                subs.bars.push(spec);
+            }
 
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
-        let mut subs = self.state.subs.lock();
-        subs.bars.retain(|spec| spec.bar_type != cmd.bar_type);
-        Ok(())
+        execute_bar_subscriptions(&cmd.bar_types, |bar_type| {
+            let mut subs = self.state.subs.lock();
+            subs.bars.retain(|spec| spec.bar_type != bar_type);
+            Ok(())
+        })
     }
 }
 

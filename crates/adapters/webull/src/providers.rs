@@ -271,8 +271,7 @@ fn resolve_load_filters(
 ) -> anyhow::Result<ResolvedLoadFilters> {
     let symbols = filters
         .and_then(|map| map.get("symbols"))
-        .map(|value| split_symbols(value))
-        .unwrap_or_else(|| default_symbols.to_vec());
+        .map_or_else(|| default_symbols.to_vec(), |value| split_symbols(value));
 
     let status = filters
         .and_then(|map| map.get("status"))

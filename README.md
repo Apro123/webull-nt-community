@@ -6,9 +6,11 @@
 > Webull product. Webull and NautilusTrader are trademarks of their respective owners.
 
 A public fork of [nautilus_trader](https://github.com/nautechsystems/nautilus_trader) (based on
-release `2.0.0rc8` (Rust crates `0.67.0`)) that adds a **Webull market data adapter**. Everything else is unmodified
-upstream code. For the engine itself - architecture, installation, tutorials, security policy -
-read the [official repository](https://github.com/nautechsystems/nautilus_trader) and the
+upstream release `2.0.0rc8` / Rust crates `0.67.0`) that adds a **Webull market data adapter**.
+This fork's package version is `2.0.0rc8+w.0.1` (`w` = Webull, `0.1` = fork revision on that
+upstream RC). Everything else is unmodified upstream code. For the engine itself - architecture,
+installation, tutorials, security policy - read the
+[official repository](https://github.com/nautechsystems/nautilus_trader) and the
 [documentation](https://nautilustrader.io/docs/); they are not duplicated here.
 
 ## Webull status
@@ -79,8 +81,19 @@ For a full wipe of `target/` (and other build dirs), use `make clean-builds`.
 
 ## Versioning and releases
 
-This fork tracks upstream NautilusTrader releases and rebases the Webull adapter onto them.
-For the engine's versioning policy, branch model, and release cadence, see the
+Fork versions use a PEP 440 local identifier on top of the upstream Python RC they track:
+
+`{upstream_python_version}+w.{fork_revision}` - for example `2.0.0rc8+w.0.1`.
+
+Rust workspace crates stay aligned with upstream (`0.67.0` for this release). GitHub Releases for
+this fork are cut manually; upstream CI jobs that publish to PyPI, crates.io, Docker Hub, or
+`nautilus_docs` are disabled here and are not part of the community release process.
+
+Upstream-only Actions workflows this fork does not run (disabled in the repo Actions settings):
+`build-docs`, `nightly-merge`. Leave them disabled after syncing workflows from upstream unless you
+intentionally configure Nautech-only secrets.
+
+For the engine's own versioning policy and branch model, see the
 [upstream README](https://github.com/nautechsystems/nautilus_trader/blob/master/README.md#versioning-and-releases).
 
 ## License

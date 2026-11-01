@@ -57,6 +57,7 @@ jobs:
           retention-days: 7
 
   build-wheels:
+    timeout-minutes: 360
     strategy:
       fail-fast: false
       matrix:
@@ -111,6 +112,8 @@ jobs:
           retention-days: 7
 
   publish-github-release:
+    # Upload whatever succeeded; do not block the release on one platform failing.
+    if: ${{ always() && needs.build-sdist.result == 'success' && !cancelled() }}
     needs:
       - build-sdist
       - build-wheels
@@ -129,6 +132,8 @@ jobs:
           path: release-assets
           pattern: fork-*
           merge-multiple: true
+          # Some matrix cells may have failed; publish whatever is present.
+        continue-on-error: true
 
       - name: Build checksums and dist manifest
         env:
@@ -137,11 +142,20 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p upload
+          if [[ ! -d release-assets ]]; then
+            echo "No release-assets directory; nothing to publish" >&2
+            exit 1
+          fi
           find release-assets -type f \( -name '*.whl' -o -name '*.tar.gz' \) -print0 \
             | sort -z \
             | while IFS= read -r -d '' path; do
                 cp -f "$path" upload/
               done
+          mapfile -t files < <(find upload -maxdepth 1 -type f ! -name SHA256SUMS ! -name dist-manifest.json | sort)
+          if [[ ${#files[@]} -eq 0 ]]; then
+            echo "No wheel/sdist artifacts to publish" >&2
+            exit 1
+          fi
           cd upload
           sha256sum -- * > SHA256SUMS
           python3 <<'PY'

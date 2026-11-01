@@ -62,18 +62,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # macOS omitted for now: free-tier runners often cancel before start.
           - os: ubuntu-22.04
             python-version: "3.13"
             rust-cache-key: fork-wheel-linux-313
           - os: ubuntu-22.04
             python-version: "3.14"
             rust-cache-key: fork-wheel-linux-314
-          - os: macos-14
-            python-version: "3.13"
-            rust-cache-key: fork-wheel-macos-313
-          - os: macos-14
-            python-version: "3.14"
-            rust-cache-key: fork-wheel-macos-314
           - os: windows-latest
             python-version: "3.13"
             rust-cache-key: fork-wheel-win-313

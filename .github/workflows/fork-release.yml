@@ -1,0 +1,202 @@
+# Community-fork release builder.
+# Builds Python wheels + sdist and attaches them to the GitHub Release for a tag.
+# Does not publish to PyPI, crates.io, Docker Hub, or nautilus_docs.
+
+name: fork-release
+
+permissions:
+  contents: read
+  actions: read
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to build and upload
+        required: true
+        type: string
+
+concurrency:
+  group: fork-release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  PACKAGE_DIR: python
+
+jobs:
+  build-sdist:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      # Depot Windows/ARM runners need ./ until they support runner >=2.336.0
+      - uses: ./.github/actions/common-setup # zizmor: ignore[self-repository]
+        with:
+          python-version: "3.13"
+          free-disk-space: "true"
+          rust-cache-key: fork-release-sdist
+
+      - name: Build sdist
+        working-directory: ${{ env.PACKAGE_DIR }}
+        run: |
+          MATURIN_VERSION="$(bash ../scripts/maturin-version.bash)"
+          uv run --no-project --no-build --with "maturin==${MATURIN_VERSION}" -- \
+            maturin sdist --out ../dist
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fork-sdist
+          path: dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  build-wheels:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            python-version: "3.13"
+            rust-cache-key: fork-wheel-linux-313
+          - os: ubuntu-22.04
+            python-version: "3.14"
+            rust-cache-key: fork-wheel-linux-314
+          - os: macos-14
+            python-version: "3.13"
+            rust-cache-key: fork-wheel-macos-313
+          - os: macos-14
+            python-version: "3.14"
+            rust-cache-key: fork-wheel-macos-314
+          - os: windows-latest
+            python-version: "3.13"
+            rust-cache-key: fork-wheel-win-313
+          - os: windows-latest
+            python-version: "3.14"
+            rust-cache-key: fork-wheel-win-314
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      # Depot Windows/ARM runners need ./ until they support runner >=2.336.0
+      - uses: ./.github/actions/common-setup # zizmor: ignore[self-repository]
+        with:
+          python-version: ${{ matrix.python-version }}
+          free-disk-space: "true"
+          free-disk-space-max-build: "true"
+          rust-cache-key: ${{ matrix.rust-cache-key }}
+
+      - name: Build wheel
+        working-directory: ${{ env.PACKAGE_DIR }}
+        shell: bash
+        run: |
+          MATURIN_VERSION="$(bash ../scripts/maturin-version.bash)"
+          uv run --no-project --no-build --with "maturin==${MATURIN_VERSION}" -- \
+            maturin build --locked --release --out ../dist
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fork-wheel-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: |
+            dist/*.whl
+          if-no-files-found: error
+          retention-days: 7
+
+  publish-github-release:
+    needs:
+      - build-sdist
+      - build-wheels
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Download artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: release-assets
+          pattern: fork-*
+          merge-multiple: true
+
+      - name: Build checksums and dist manifest
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p upload
+          find release-assets -type f \( -name '*.whl' -o -name '*.tar.gz' \) -print0 \
+            | sort -z \
+            | while IFS= read -r -d '' path; do
+                cp -f "$path" upload/
+              done
+          cd upload
+          sha256sum -- * > SHA256SUMS
+          python3 <<'PY'
+          import hashlib
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          root = Path(".")
+          artifacts = []
+          for path in sorted(root.iterdir()):
+              if path.name in {"SHA256SUMS", "dist-manifest.json"}:
+                  continue
+              if not (path.name.endswith(".whl") or path.name.endswith(".tar.gz")):
+                  continue
+              digest = hashlib.sha256(path.read_bytes()).hexdigest()
+              artifacts.append(
+                  {
+                      "name": path.name,
+                      "sha256": digest,
+                      "size": path.stat().st_size,
+                  }
+              )
+          manifest = {
+              "schema_version": 1,
+              "tag": os.environ["TAG"],
+              "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+              "repository": "Apro123/webull-nt-community",
+              "artifacts": artifacts,
+          }
+          Path("dist-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+          print(json.dumps(manifest, indent=2))
+          PY
+          ls -lh
+
+      - name: Upload assets to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        shell: bash
+        run: |-
+          set -euo pipefail
+          # Ensure the release exists (tag-only is not enough for asset uploads).
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            title="webull-nt-community ${TAG#v}"
+            notes="Community fork release ${TAG#v}. Python wheels and sdist only;"
+            notes+=" Rust crates remain upstream 0.67.0 and are not republished."
+            gh release create "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$title" \
+              --notes "$notes" \
+              --latest
+          fi
+          gh release upload "$TAG" upload/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY"

@@ -85,13 +85,16 @@ Fork versions use a PEP 440 local identifier on top of the upstream Python RC th
 
 `{upstream_python_version}+w.{fork_revision}` - for example `2.0.0rc8+w.0.1`.
 
-Rust workspace crates stay aligned with upstream (`0.67.0` for this release). GitHub Releases for
-this fork are cut manually; upstream CI jobs that publish to PyPI, crates.io, Docker Hub, or
-`nautilus_docs` are disabled here and are not part of the community release process.
+Rust workspace crates stay aligned with upstream (`0.67.0` for this release). GitHub Releases for this fork ship **Python wheels + sdist + SHA256SUMS** via the
+`fork-release` workflow (tag push or manual dispatch). Rust crates stay on the upstream
+`0.67.0` line and are **not** republished to crates.io from this fork. Upstream CI that
+publishes to PyPI, crates.io, Docker Hub, or `nautilus_docs` is disabled here.
 
-Upstream-only Actions workflows this fork does not run (disabled in the repo Actions settings):
-`build-docs`, `nightly-merge`. Leave them disabled after syncing workflows from upstream unless you
-intentionally configure Nautech-only secrets.
+Upstream-only / heavy workflows disabled in the repo Actions settings (leave them disabled
+after syncing from upstream unless you intentionally configure Nautech secrets and runners):
+`build`, `build-docs`, `cli-binaries`, `codeql-analysis`, `docker`, `nightly-merge`,
+`nightly-tests`, `openssf-scorecard`, `performance`, `recover-release`, `security-audit`,
+`test`. The only enabled release builder is `fork-release`.
 
 For the engine's own versioning policy and branch model, see the
 [upstream README](https://github.com/nautechsystems/nautilus_trader/blob/master/README.md#versioning-and-releases).

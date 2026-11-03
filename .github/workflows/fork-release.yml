@@ -1,5 +1,7 @@
 # Community-fork release builder.
-# Builds Python wheels + sdist and attaches them to the GitHub Release for a tag.
+# Builds Python wheels + sdist, attests them, and attaches upstream-style GitHub
+# Release assets (packages, per-file .sha256, .sigstore, .intoto.jsonl,
+# SHA256SUMS, dist-manifest.json).
 # Does not publish to PyPI, crates.io, Docker Hub, or nautilus_docs.
 
 name: fork-release
@@ -62,19 +64,30 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # macOS omitted for now: free-tier runners often cancel before start.
           - os: ubuntu-22.04
             python-version: "3.13"
-            rust-cache-key: fork-wheel-linux-313
+            rust-cache-key: fork-wheel-linux-x64-313
           - os: ubuntu-22.04
             python-version: "3.14"
-            rust-cache-key: fork-wheel-linux-314
+            rust-cache-key: fork-wheel-linux-x64-314
+          - os: ubuntu-24.04-arm
+            python-version: "3.13"
+            rust-cache-key: fork-wheel-linux-arm-313
+          - os: ubuntu-24.04-arm
+            python-version: "3.14"
+            rust-cache-key: fork-wheel-linux-arm-314
           - os: windows-latest
             python-version: "3.13"
             rust-cache-key: fork-wheel-win-313
           - os: windows-latest
             python-version: "3.14"
             rust-cache-key: fork-wheel-win-314
+          - os: macos-latest
+            python-version: "3.13"
+            rust-cache-key: fork-wheel-macos-313
+          - os: macos-latest
+            python-version: "3.14"
+            rust-cache-key: fork-wheel-macos-314
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -89,6 +102,11 @@ jobs:
           free-disk-space: "true"
           free-disk-space-max-build: "true"
           rust-cache-key: ${{ matrix.rust-cache-key }}
+
+      - name: Limit Cargo build jobs on GitHub-hosted runners
+        if: runner.environment == 'github-hosted'
+        shell: bash
+        run: echo "CARGO_BUILD_JOBS=2" >> "$GITHUB_ENV"
 
       - name: Build wheel
         working-directory: ${{ env.PACKAGE_DIR }}
@@ -114,7 +132,10 @@ jobs:
       - build-wheels
     runs-on: ubuntu-22.04
     permissions:
+      actions: read
       contents: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -130,7 +151,8 @@ jobs:
           # Some matrix cells may have failed; publish whatever is present.
         continue-on-error: true
 
-      - name: Build checksums and dist manifest
+      - name: Stage package assets
+        id: stage
         env:
           TAG: ${{ github.event.inputs.tag || github.ref_name }}
         shell: bash
@@ -146,66 +168,147 @@ jobs:
             | while IFS= read -r -d '' path; do
                 cp -f "$path" upload/
               done
-          mapfile -t files < <(find upload -maxdepth 1 -type f ! -name SHA256SUMS ! -name dist-manifest.json | sort)
+          mapfile -t files < <(find upload -maxdepth 1 -type f \( -name '*.whl' -o -name '*.tar.gz' \) | sort)
           if [[ ${#files[@]} -eq 0 ]]; then
             echo "No wheel/sdist artifacts to publish" >&2
             exit 1
           fi
-          cd upload
-          sha256sum -- * > SHA256SUMS
-          python3 <<'PY'
-          import hashlib
-          import json
-          import os
-          from datetime import datetime, timezone
-          from pathlib import Path
+          {
+            echo "package_count=${#files[@]}"
+            echo "package_glob=upload/nautilus_trader-*"
+          } >> "$GITHUB_OUTPUT"
+          printf 'Staged %s package asset(s):\n' "${#files[@]}"
+          printf '  %s\n' "${files[@]##*/}"
+          ls -lh upload
 
-          root = Path(".")
-          artifacts = []
-          for path in sorted(root.iterdir()):
-              if path.name in {"SHA256SUMS", "dist-manifest.json"}:
-                  continue
-              if not (path.name.endswith(".whl") or path.name.endswith(".tar.gz")):
-                  continue
-              digest = hashlib.sha256(path.read_bytes()).hexdigest()
-              artifacts.append(
-                  {
-                      "name": path.name,
-                      "sha256": digest,
-                      "size": path.stat().st_size,
-                  }
-              )
-          manifest = {
-              "schema_version": 1,
-              "tag": os.environ["TAG"],
-              "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-              "repository": "Apro123/webull-nt-community",
-              "artifacts": artifacts,
-          }
-          Path("dist-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
-          print(json.dumps(manifest, indent=2))
-          PY
-          ls -lh
+      - name: Ensure GitHub Release exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            exit 0
+          fi
+          title="webull-nt-community ${TAG#v}"
+          notes="Community fork release ${TAG#v}. Python wheels, sdist, checksums,"
+          notes+=" and Sigstore provenance only; Rust crates remain upstream 0.67.0"
+          notes+=" and are not republished."
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$title" \
+            --notes "$notes" \
+            --latest
 
-      - name: Upload assets to GitHub Release
+      - name: Upload package assets to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.event.inputs.tag || github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          packages=(upload/*.whl upload/*.tar.gz)
+          if [[ ${#packages[@]} -eq 0 ]]; then
+            echo "No packages to upload" >&2
+            exit 1
+          fi
+          bash ./scripts/ci/upload-github-release-assets.bash packages "${packages[@]}"
+
+      - name: Remove superseded package assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Drop older package filenames (for example a local manylinux_2_39 wheel)
+          # that are not part of this publish set, plus their sidecar files.
+          declare -A keep=()
+          while IFS= read -r name; do
+            keep["$name"]=1
+          done < <(find upload -maxdepth 1 -type f \( -name '*.whl' -o -name '*.tar.gz' \) -printf '%f\n')
+
+          mapfile -t candidates < <(
+            gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets \
+              --jq '.assets[].name'
+          )
+          stale=()
+          for name in "${candidates[@]}"; do
+            case "$name" in
+              *.whl|*.tar.gz) ;;
+              *.whl.sha256|*.tar.gz.sha256) ;;
+              *.whl.sigstore|*.tar.gz.sigstore) ;;
+              *.whl.intoto.jsonl|*.tar.gz.intoto.jsonl) ;;
+              *) continue ;;
+            esac
+            base="$name"
+            base="${base%.sha256}"
+            base="${base%.sigstore}"
+            base="${base%.intoto.jsonl}"
+            if [[ -n "${keep[$base]:-}" || -n "${keep[$name]:-}" ]]; then
+              continue
+            fi
+            stale+=("$name")
+          done
+          if [[ ${#stale[@]} -eq 0 ]]; then
+            echo "No superseded package assets to delete"
+            exit 0
+          fi
+          printf 'Deleting superseded assets:\n'
+          printf '  %s\n' "${stale[@]}"
+          for name in "${stale[@]}"; do
+            gh release delete-asset "$TAG" "$name" --repo "$GITHUB_REPOSITORY" --yes
+          done
+
+      - name: Attest package provenance
+        id: attest-packages
+        # Depot Windows/ARM runners need ./ until they support runner >=2.336.0
+        uses: ./.github/actions/attest-build-provenance-retry # zizmor: ignore[self-repository]
+        with:
+          subject-path: |
+            upload/nautilus_trader-*.whl
+            upload/nautilus_trader-*.tar.gz
+
+      - name: Prepare attestation siblings
+        env:
+          BUNDLE_PATH: ${{ steps.attest-packages.outputs.bundle-path }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          packages=(upload/*.whl upload/*.tar.gz)
+          bash ./scripts/ci/prepare-release-attestation-siblings.bash "${packages[@]}"
+
+      - name: Generate and publish checksum assets
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.event.inputs.tag || github.ref_name }}
+          ATTESTATION_IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
+          ATTESTATION_ISSUER: https://token.actions.githubusercontent.com
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Rebuild checksum sidecars from the staged packages we just attested.
+          bash ./scripts/ci/publish-release-checksums.sh --generate-local upload
+          bash ./scripts/ci/publish-release-checksums.sh --publish-existing upload
+
+      - name: Upload attestation siblings
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.event.inputs.tag || github.ref_name }}
+        shell: bash
+        run: bash ./scripts/ci/upload-release-attestation-siblings.bash upload
+
+      - name: Show release assets
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.inputs.tag || github.ref_name }}
         shell: bash
         run: |-
           set -euo pipefail
-          # Ensure the release exists (tag-only is not enough for asset uploads).
-          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            title="webull-nt-community ${TAG#v}"
-            notes="Community fork release ${TAG#v}. Python wheels and sdist only;"
-            notes+=" Rust crates remain upstream 0.67.0 and are not republished."
-            gh release create "$TAG" \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "$title" \
-              --notes "$notes" \
-              --latest
-          fi
-          gh release upload "$TAG" upload/* \
-            --repo "$GITHUB_REPOSITORY" \
-            --clobber
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY"
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets \
+            --jq '.assets | sort_by(.name)[] | "\(.name)\t\(.size)"'

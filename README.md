@@ -85,10 +85,13 @@ Fork versions use a PEP 440 local identifier on top of the upstream Python RC th
 
 `{upstream_python_version}+w.{fork_revision}` - for example `2.0.0rc8+w.0.1`.
 
-Rust workspace crates stay aligned with upstream (`0.67.0` for this release). GitHub Releases for this fork ship **Python wheels + sdist + SHA256SUMS** via the
-`fork-release` workflow (tag push or manual dispatch). Rust crates stay on the upstream
-`0.67.0` line and are **not** republished to crates.io from this fork. Upstream CI that
-publishes to PyPI, crates.io, Docker Hub, or `nautilus_docs` is disabled here.
+Rust workspace crates stay aligned with upstream (`0.67.0` for this release). GitHub Releases for this fork ship **Python wheels + sdist** plus upstream-style sidecars
+(`.sha256`, `.sigstore`, `.intoto.jsonl`, `SHA256SUMS`, `dist-manifest.json`) via the
+`fork-release` workflow (tag push or manual dispatch). Platform coverage aims for Linux
+x86_64 / aarch64, Windows x86_64, and macOS arm64 (CPython 3.13 and 3.14); partial sets
+still publish if a runner fails. Rust crates stay on the upstream `0.67.0` line and are
+**not** republished to crates.io from this fork (so there is no `crates-manifest.json`).
+Upstream CI that publishes to PyPI, crates.io, Docker Hub, or `nautilus_docs` is disabled here.
 
 Upstream-only / heavy workflows disabled in the repo Actions settings (leave them disabled
 after syncing from upstream unless you intentionally configure Nautech secrets and runners):

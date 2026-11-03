@@ -46,6 +46,53 @@ pub struct WebullBar {
     pub instrument_id: String,
 }
 
+/// One symbol's page from `/openapi/market-data/futures/bars`.
+///
+/// Futures OHLC rows omit `trading_session` / `instrument_id`; callers map
+/// them into [`WebullBar`] with defaults before the shared converters run.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct WebullFuturesBarsPage {
+    /// Continuous or dated futures symbol, e.g. `MESmain`.
+    pub symbol: String,
+    /// Bars newest first.
+    pub result: Vec<WebullFuturesBar>,
+}
+
+/// A futures OHLCV row (fields present on the futures bars endpoint).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct WebullFuturesBar {
+    /// Bar start time, e.g. `2026-09-04T14:55:00.000+0000`.
+    pub time: String,
+    /// Bar open price.
+    pub open: String,
+    /// Bar high price.
+    pub high: String,
+    /// Bar low price.
+    pub low: String,
+    /// Bar close price.
+    pub close: String,
+    /// Bar volume.
+    pub volume: String,
+}
+
+impl WebullFuturesBar {
+    /// Lift into the stock-shaped [`WebullBar`] used by shared converters.
+    #[must_use]
+    pub fn into_webull_bar(self, symbol: &str) -> WebullBar {
+        WebullBar {
+            symbol: symbol.to_string(),
+            time: self.time,
+            open: self.open,
+            high: self.high,
+            low: self.low,
+            close: self.close,
+            volume: self.volume,
+            trading_session: String::new(),
+            instrument_id: String::new(),
+        }
+    }
+}
+
 /// A live quote snapshot as returned by `/openapi/market-data/stock/snapshot`.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct WebullSnapshot {
@@ -223,6 +270,20 @@ mod tests {
         assert_eq!(bar.volume, "619677");
         assert_eq!(bar.trading_session, "RTH");
         assert_eq!(bar.instrument_id, "913256135");
+    }
+
+    #[rstest]
+    fn test_futures_bars_page_deserializes() {
+        let json = r#"[{"symbol":"MESmain","result":[{"time":"2026-11-02T06:00:00.000+0000","open":"7626","high":"7694","close":"7587","low":"7570.75","volume":"1241693"}]}]"#;
+        let pages: Vec<WebullFuturesBarsPage> =
+            serde_json::from_str(json).expect("parses futures page");
+        assert_eq!(pages.len(), 1);
+        assert_eq!(pages[0].symbol, "MESmain");
+        assert_eq!(pages[0].result.len(), 1);
+        let bar = pages[0].result[0].clone().into_webull_bar("MESmain");
+        assert_eq!(bar.symbol, "MESmain");
+        assert_eq!(bar.close, "7587");
+        assert!(bar.trading_session.is_empty());
     }
 
     #[rstest]

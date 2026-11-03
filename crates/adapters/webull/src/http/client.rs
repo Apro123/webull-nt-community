@@ -28,15 +28,15 @@ use crate::{
         consts::{WEBULL_REST_QUOTA, WEBULL_REST_RATE_KEY},
         credential::Credential,
         urls::{
-            BARS_PATH, CRYPTO_INSTRUMENTS_PATH, SNAPSHOT_PATH, STOCK_INSTRUMENTS_PATH, TICK_PATH,
-            WEBULL_HTTP_BASE_URL, WEBULL_HTTP_HOST,
+            BARS_PATH, CRYPTO_INSTRUMENTS_PATH, FUTURES_BARS_PATH, SNAPSHOT_PATH,
+            STOCK_INSTRUMENTS_PATH, TICK_PATH, WEBULL_HTTP_BASE_URL, WEBULL_HTTP_HOST,
         },
     },
     http::{
         error::{Error, Result},
         models::{
-            WebullBar, WebullCryptoInstrumentPage, WebullErrorResponse, WebullInstrumentPage,
-            WebullSnapshot, WebullTick, WebullTickResponse,
+            WebullBar, WebullCryptoInstrumentPage, WebullErrorResponse, WebullFuturesBarsPage,
+            WebullInstrumentPage, WebullSnapshot, WebullTick, WebullTickResponse,
         },
     },
     signing::{SIGNATURE_ALGORITHM, SIGNATURE_VERSION, sign_request},
@@ -272,6 +272,43 @@ impl WebullHttpClient {
         Ok(serde_json::from_str(&body)?)
     }
 
+    /// Returns futures historical bars ending at `end_time_ms`, newest first.
+    ///
+    /// Uses `/openapi/market-data/futures/bars` (`symbols` plural). Requires a
+    /// `US_FUTURES` (or regional futures) market-data subscription.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    pub async fn get_futures_bars(
+        &self,
+        symbol: &str,
+        category: &str,
+        timespan: &str,
+        count: u32,
+        end_time_ms: u64,
+    ) -> Result<Vec<WebullBar>> {
+        let query = vec![
+            ("symbols".to_string(), symbol.to_string()),
+            ("category".to_string(), category.to_string()),
+            ("timespan".to_string(), timespan.to_string()),
+            ("count".to_string(), count.to_string()),
+            ("end_time".to_string(), end_time_ms.to_string()),
+        ];
+
+        let body = self.signed_get(FUTURES_BARS_PATH, &query).await?;
+        let pages: Vec<WebullFuturesBarsPage> = serde_json::from_str(&body)?;
+        Ok(pages
+            .into_iter()
+            .flat_map(|page| {
+                let sym = page.symbol;
+                page.result
+                    .into_iter()
+                    .map(move |bar| bar.into_webull_bar(&sym))
+            })
+            .collect())
+    }
+
     /// Returns quote snapshots for the given symbols.
     ///
     /// # Errors
@@ -454,6 +491,38 @@ mod tests {
         assert!(request.contains("x-signature-algorithm: HMAC-SHA1"));
         assert!(request.contains("x-access-token: test-access-token"));
         assert!(request.contains("x-app-key: test-api-key"));
+        assert!(
+            !request.contains("test-api-secret"),
+            "secret must not be sent"
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_get_futures_bars_signs_and_parses() {
+        let body = r#"[{"symbol":"MESmain","result":[{"time":"2026-11-02T06:00:00.000+0000","open":"7626","high":"7694","close":"7587","low":"7570.75","volume":"1241693"}]}]"#;
+        let (base_url, requests) = testing::start(vec![(200, body.to_string())]);
+
+        let client = test_client(&base_url);
+
+        let bars = client
+            .get_futures_bars("MESmain", "US_FUTURES", "D", 200, 1_788_550_800_000)
+            .await
+            .expect("fetches futures bars");
+
+        assert_eq!(bars.len(), 1);
+        assert_eq!(bars[0].symbol, "MESmain");
+        assert_eq!(bars[0].close, "7587");
+        assert!(bars[0].trading_session.is_empty());
+        assert!(bars[0].instrument_id.is_empty());
+
+        let request = requests.recv().expect("captures request");
+        assert!(request.contains("GET /openapi/market-data/futures/bars?"));
+        assert!(request.contains("symbols=MESmain"));
+        assert!(request.contains("category=US_FUTURES"));
+        assert!(request.contains("timespan=D"));
+        assert!(request.contains("end_time=1788550800000"));
+        assert!(request.contains("x-signature:"));
         assert!(
             !request.contains("test-api-secret"),
             "secret must not be sent"

@@ -62,6 +62,10 @@ impl WebullHistoricalClient {
     /// newest first, start times ignored), so this method walks `end_time`
     /// backwards until the start is reached or the data wall is hit.
     ///
+    /// Categories whose name contains `FUTURE` use the futures bars path;
+    /// everything else uses the stock/ETF bars path (with optional session
+    /// filter).
+    ///
     /// # Errors
     ///
     /// Returns an error if a request fails or a bar time cannot be parsed.
@@ -76,21 +80,27 @@ impl WebullHistoricalClient {
     ) -> Result<Vec<WebullBar>> {
         const PAGE_SIZE: u32 = 200;
 
+        let futures = category.to_ascii_uppercase().contains("FUTURE");
         let mut bars: Vec<(u64, WebullBar)> = Vec::new();
         let mut cursor = end_time_ms;
 
         loop {
-            let page = self
-                .http
-                .get_bars(
-                    symbol,
-                    category,
-                    timespan.api_value(),
-                    PAGE_SIZE,
-                    cursor,
-                    trading_sessions,
-                )
-                .await?;
+            let page = if futures {
+                self.http
+                    .get_futures_bars(symbol, category, timespan.api_value(), PAGE_SIZE, cursor)
+                    .await?
+            } else {
+                self.http
+                    .get_bars(
+                        symbol,
+                        category,
+                        timespan.api_value(),
+                        PAGE_SIZE,
+                        cursor,
+                        trading_sessions,
+                    )
+                    .await?
+            };
 
             if page.is_empty() {
                 break;

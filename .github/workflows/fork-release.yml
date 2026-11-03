@@ -63,31 +63,29 @@ jobs:
     timeout-minutes: 360
     strategy:
       fail-fast: false
-      # Free GitHub-hosted runners often get reclaimed when many heavy Rust
-      # release builds run at once (seen as exit 143 / shutdown signal).
-      max-parallel: 2
+      # Free GitHub-hosted runners reclaim mid fat-LTO link (exit 143). Serialize
+      # builds and thin the Linux release LTO so linking can finish.
+      max-parallel: 1
       matrix:
         include:
           - os: ubuntu-22.04
             python-version: "3.13"
             rust-cache-key: fork-wheel-linux-x64-313
+            linux_link_fast: "true"
           - os: ubuntu-22.04
             python-version: "3.14"
             rust-cache-key: fork-wheel-linux-x64-314
-          - os: ubuntu-24.04-arm
-            python-version: "3.13"
-            rust-cache-key: fork-wheel-linux-arm-313
-          - os: ubuntu-24.04-arm
-            python-version: "3.14"
-            rust-cache-key: fork-wheel-linux-arm-314
+            linux_link_fast: "true"
           - os: windows-latest
             python-version: "3.13"
             rust-cache-key: fork-wheel-win-313
+            linux_link_fast: "false"
           - os: windows-latest
             python-version: "3.14"
             rust-cache-key: fork-wheel-win-314
-            # macOS omitted for now: free-tier runners have repeatedly hung for
-            # hours in release-mode linking and blocked publish.
+            linux_link_fast: "false"
+            # macOS / Linux aarch64 omitted for now: free-tier runners hang or get
+            # reclaimed during release-mode linking and block publish.
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -107,6 +105,14 @@ jobs:
         if: runner.environment == 'github-hosted'
         shell: bash
         run: echo "CARGO_BUILD_JOBS=2" >> "$GITHUB_ENV"
+
+      - name: Speed up Linux release linking on free runners
+        if: matrix.linux_link_fast == 'true'
+        shell: bash
+        run: |
+          # common-setup already installs lld on Linux.
+          echo "CARGO_PROFILE_RELEASE_LTO=thin" >> "$GITHUB_ENV"
+          echo "RUSTFLAGS=${RUSTFLAGS:-} -C link-arg=-fuse-ld=lld" >> "$GITHUB_ENV"
 
       - name: Build wheel
         working-directory: ${{ env.PACKAGE_DIR }}

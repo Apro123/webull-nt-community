@@ -24,6 +24,9 @@ pub const WEBULL_HTTP_HOST: &str = "api.webull.com";
 /// Path for the historical bars endpoint.
 pub const BARS_PATH: &str = "/openapi/market-data/stock/bars";
 
+/// Path for the futures historical bars endpoint.
+pub const FUTURES_BARS_PATH: &str = "/openapi/market-data/futures/bars";
+
 /// Path for the quote snapshot endpoint.
 pub const SNAPSHOT_PATH: &str = "/openapi/market-data/stock/snapshot";
 

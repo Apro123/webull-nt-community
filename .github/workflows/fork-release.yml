@@ -22,8 +22,9 @@ on:
         type: string
 
 concurrency:
-  group: fork-release-${{ github.event.inputs.tag || github.ref_name }}
-  cancel-in-progress: false
+  # Versioned group name so a stuck prior run cannot block a fresh dispatch.
+  group: fork-release-v2-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: true
 
 env:
   PACKAGE_DIR: python
@@ -85,12 +86,8 @@ jobs:
           - os: windows-latest
             python-version: "3.14"
             rust-cache-key: fork-wheel-win-314
-          - os: macos-latest
-            python-version: "3.13"
-            rust-cache-key: fork-wheel-macos-313
-          - os: macos-latest
-            python-version: "3.14"
-            rust-cache-key: fork-wheel-macos-314
+            # macOS omitted for now: free-tier runners have repeatedly hung for
+            # hours in release-mode linking and blocked publish.
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

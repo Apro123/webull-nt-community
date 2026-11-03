@@ -499,6 +499,38 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
+    async fn test_get_futures_bars_signs_and_parses() {
+        let body = r#"[{"symbol":"MESmain","result":[{"time":"2026-11-02T06:00:00.000+0000","open":"7626","high":"7694","close":"7587","low":"7570.75","volume":"1241693"}]}]"#;
+        let (base_url, requests) = testing::start(vec![(200, body.to_string())]);
+
+        let client = test_client(&base_url);
+
+        let bars = client
+            .get_futures_bars("MESmain", "US_FUTURES", "D", 200, 1_788_550_800_000)
+            .await
+            .expect("fetches futures bars");
+
+        assert_eq!(bars.len(), 1);
+        assert_eq!(bars[0].symbol, "MESmain");
+        assert_eq!(bars[0].close, "7587");
+        assert!(bars[0].trading_session.is_empty());
+        assert!(bars[0].instrument_id.is_empty());
+
+        let request = requests.recv().expect("captures request");
+        assert!(request.contains("GET /openapi/market-data/futures/bars?"));
+        assert!(request.contains("symbols=MESmain"));
+        assert!(request.contains("category=US_FUTURES"));
+        assert!(request.contains("timespan=D"));
+        assert!(request.contains("end_time=1788550800000"));
+        assert!(request.contains("x-signature:"));
+        assert!(
+            !request.contains("test-api-secret"),
+            "secret must not be sent"
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
     async fn test_api_error_is_surfaced() {
         let error_body =
             r#"{"message":"Header x-signature is invalid.","error_code":"UNAUTHORIZED"}"#;

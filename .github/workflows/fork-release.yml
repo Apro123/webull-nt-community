@@ -62,6 +62,9 @@ jobs:
     timeout-minutes: 360
     strategy:
       fail-fast: false
+      # Free GitHub-hosted runners often get reclaimed when many heavy Rust
+      # release builds run at once (seen as exit 143 / shutdown signal).
+      max-parallel: 2
       matrix:
         include:
           - os: ubuntu-22.04

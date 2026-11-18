@@ -116,19 +116,29 @@ python examples/backtest/equity_ema_cross_aapl_webull.py
 ## Sandbox
 
 Webull publishes a test environment at `api.sandbox.webull.com`. Live smoke
-tests against it are in
-[`python/tests/integration/adapters/webull/test_webull_sandbox.py`](https://github.com/Apro123/webull-nt-community/blob/master/python/tests/integration/adapters/webull/test_webull_sandbox.py);
-they skip unless sandbox app credentials are in the environment:
+tests against it run only when sandbox app credentials are in the environment,
+and they do not send the production 2FA access token.
+
+The historical client bindings are covered by
+[`python/tests/integration/adapters/webull/test_webull_sandbox.py`](https://github.com/Apro123/webull-nt-community/blob/master/python/tests/integration/adapters/webull/test_webull_sandbox.py):
 
 ```bash
 WEBULL_API_KEY=... WEBULL_API_SECRET=... \
 uv run --project python pytest python/tests/integration/adapters/webull -v
 ```
 
+The instrument provider is Rust-only. Its sandbox load is
+[`crates/adapters/webull/tests/integration/sandbox.rs`](https://github.com/Apro123/webull-nt-community/blob/master/crates/adapters/webull/tests/integration/sandbox.rs).
+With the variables unset the test returns immediately, so `cargo test` and
+`make pre-flight` stay independent of the sandbox:
+
+```bash
+WEBULL_API_KEY=... WEBULL_API_SECRET=... \
+cargo test -p nautilus-webull --test integration sandbox
+```
+
 Each call is retried up to three times with exponential backoff (the sandbox
-is shared and intermittently unavailable). Unlike the official adapters, whose
-credential-consuming smoke tests are Rust `#[ignore]` tests, these live in
-Python so they exercise the same bindings users do.
+is shared and intermittently unavailable).
 
 ## Limitations
 

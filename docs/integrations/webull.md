@@ -6,7 +6,9 @@ an independent community project. It is not affiliated with, endorsed by, or sup
 Nautech Systems Pty Ltd, the official NautilusTrader project, or Webull.
 :::
 
-Webull provides US equities market data through its OpenAPI.
+Webull provides US equities market data through its OpenAPI. Historical bars also
+cover US futures categories (`US_FUTURES` and other categories whose name contains
+`FUTURE`) through `/openapi/market-data/futures/bars`.
 
 This fork integrates with the Webull historical and snapshot market data
 endpoints. The capabilities of this adapter include:
@@ -44,9 +46,11 @@ the adapter sends the token on every request.
 
 The Webull OpenAPI is request/response only, so `WebullDataClient` polls the
 snapshot, tick, and bar endpoints every `poll_interval_secs` (default 5) for
-the instruments subscribed through the engine. Instruments must already be
-loaded in the cache (the venue exposes no instrument discovery endpoint);
-quote and trade subscriptions deliver ticks continuously, and bar
+the instruments subscribed through the engine. The Rust
+`WebullInstrumentProvider` can load stock and crypto instruments over REST, but
+it is not registered on the live data client and is not exposed to Python, so
+live subscriptions still need those instruments already loaded in the cache.
+Quote and trade subscriptions deliver ticks continuously, and bar
 subscriptions deliver each completed bar of a supported timespan.
 
 ```python

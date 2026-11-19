@@ -6,8 +6,8 @@
 > Webull product. Webull and NautilusTrader are trademarks of their respective owners.
 
 A public fork of [nautilus_trader](https://github.com/nautechsystems/nautilus_trader) (based on
-upstream release `2.0.0rc8` / Rust crates `0.67.0`) that adds a **Webull market data adapter**.
-This fork's package version is `2.0.0rc8+w.0.1` (`w` = Webull, `0.1` = fork revision on that
+upstream release `2.0.0rc9` / Rust crates `0.68.0`) that adds a **Webull market data adapter**.
+This fork's package version is `2.0.0rc9+w.0.1` (`w` = Webull, `0.1` = fork revision on that
 upstream RC). Everything else is unmodified upstream code. For the engine itself - architecture,
 installation, tutorials, security policy - read the
 [official repository](https://github.com/nautechsystems/nautilus_trader) and the
@@ -17,7 +17,8 @@ installation, tutorials, security policy - read the
 
 Feature universe: [Market Data API](https://developer.webull.com/apis/docs/market-data-api/overview),
 [Trade API](https://developer.webull.com/apis/docs/trade-api/overview). Scope so far is **US
-stocks/ETFs market data only**.
+stocks/ETFs**, plus US futures historical bars and a Rust instrument provider for stocks
+and crypto.
 
 ### Done
 
@@ -26,9 +27,10 @@ stocks/ETFs market data only**.
 | Signed REST client                    | HMAC-SHA1 per the Webull spec; app key/secret, optional 2FA access token; 60 req/min self-throttle, retry with backoff honoring `Retry-After` |
 | Snapshot quotes (`get_snapshot`)      | Real-time stock/ETF quotes as `QuoteTick` objects                                                                                             |
 | Trade ticks (`get_ticks`)             | Recent trades as `TradeTick` objects, count-limited                                                                                           |
-| Historical bars (`get_history_bars`)  | `M1`-`M240`, `D`, `W`, `M`; backwards paging with dedupe; `PRE,RTH,ATH` session filter                                                        |
+| Historical bars (`get_history_bars`)  | `M1`-`M240`, `D`, `W`, `M`; backwards paging with dedupe; `PRE,RTH,ATH` session filter; US futures categories use the futures bars path       |
 | Live data client (`WebullDataClient`) | Polling `DataClient` for quotes/trades/bars, registered through `WebullDataClientFactory` and `WebullDataClientConfig`                        |
 | Python bindings                       | `WebullHistoricalClient`, `WebullDataClientConfig`, `WebullDataClientFactory`, `Timespan`                                                     |
+| Instrument provider                   | Rust `WebullInstrumentProvider` loads stock and crypto instruments over REST; not registered on the live client or exposed to Python          |
 | Backtest example                      | [`examples/backtest/equity_ema_cross_aapl_webull.py`](examples/backtest/equity_ema_cross_aapl_webull.py)                                      |
 | Catalog bulk download                 | [`scripts/webull_bulk_download.py`](scripts/webull_bulk_download.py), incremental gap fill into a Parquet catalog                             |
 | Tests                                 | Rust unit + mock-server integration tests; Python unit tests; live sandbox smoke tests (skipped without credentials)                          |
@@ -39,9 +41,9 @@ stocks/ETFs market data only**.
 | Area                                            | Status      | Notes                                                                |
 | :---------------------------------------------- | :---------- | :------------------------------------------------------------------- |
 | Market data streaming (MQTT/WebSocket)          | Not started | Real-time push instead of REST polling                               |
-| Options, futures, crypto, event contract data   | Not started | Categories beyond stocks/ETFs                                        |
+| Options, crypto, event contracts                | Not started | Categories beyond stocks/ETFs and futures historical bars            |
 | Order book depth (L2, overnight depth)          | Not started | Requires the venue's TotalView entitlements                          |
-| Instrument discovery (`InstrumentProvider`)     | Not started | Live subscriptions and bars need instruments pre-loaded in the cache |
+| Instrument provider on the live client          | Not started | Rust loader exists; live subscriptions still need instruments cached |
 | Trade API (orders, positions, balances, events) | Not started | Out of scope for this fork's current phase                           |
 
 ## Getting started
@@ -83,13 +85,14 @@ For a full wipe of `target/` (and other build dirs), use `make clean-builds`.
 
 Fork versions use a PEP 440 local identifier on top of the upstream Python RC they track:
 
-`{upstream_python_version}+w.{fork_revision}` - for example `2.0.0rc8+w.0.1`.
+`{upstream_python_version}+w.{fork_revision}` - for example `2.0.0rc9+w.0.1`.
 
-Rust workspace crates stay aligned with upstream (`0.67.0` for this release). GitHub Releases for this fork ship **Python wheels + sdist** plus upstream-style sidecars
+Rust workspace crates stay aligned with upstream (`0.68.0` for this release). GitHub Releases for this fork ship **Python wheels + sdist** plus upstream-style sidecars
 (`.sha256`, `.sigstore`, `.intoto.jsonl`, `SHA256SUMS`, `dist-manifest.json`) via the
-`fork-release` workflow (tag push or manual dispatch). Platform coverage aims for Linux
-x86_64 / aarch64, Windows x86_64, and macOS arm64 (CPython 3.13 and 3.14); partial sets
-still publish if a runner fails. Rust crates stay on the upstream `0.67.0` line and are
+`fork-release` workflow (tag push or manual dispatch). Published wheels cover Linux x86_64
+and Windows x86_64 (CPython 3.13 and 3.14). macOS and Linux aarch64 are omitted because
+free-tier runners are reclaimed during release-mode linking; partial sets still publish if
+a runner fails. Rust crates stay on the upstream `0.68.0` line and are
 **not** republished to crates.io from this fork (so there is no `crates-manifest.json`).
 Upstream CI that publishes to PyPI, crates.io, Docker Hub, or `nautilus_docs` is disabled here.
 

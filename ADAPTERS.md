@@ -102,9 +102,9 @@ The following adapters are maintained in the core repository:
 The tables above describe the official upstream project. This repository is an independent
 community fork, and adapters introduced by this fork are not official:
 
-| Adapter | Type | Notes                                  |
-| ------- | ---- | -------------------------------------- |
-| Webull  | Data | Beta; US stocks/ETFs market data only. |
+| Adapter | Type | Notes                                                  |
+| ------- | ---- | ------------------------------------------------------ |
+| Webull  | Data | Beta; US stocks/ETFs, plus US futures historical bars. |
 
 The Webull adapter is maintained in this repository. It is not affiliated with, endorsed by, or
 supported by Nautech Systems Pty Ltd or the official NautilusTrader project, and it is not an

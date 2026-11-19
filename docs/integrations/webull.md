@@ -6,7 +6,9 @@ an independent community project. It is not affiliated with, endorsed by, or sup
 Nautech Systems Pty Ltd, the official NautilusTrader project, or Webull.
 :::
 
-Webull provides US equities market data through its OpenAPI.
+Webull provides US equities market data through its OpenAPI. Historical bars also
+cover US futures categories (`US_FUTURES` and other categories whose name contains
+`FUTURE`) through `/openapi/market-data/futures/bars`.
 
 This fork integrates with the Webull historical and snapshot market data
 endpoints. The capabilities of this adapter include:
@@ -44,9 +46,11 @@ the adapter sends the token on every request.
 
 The Webull OpenAPI is request/response only, so `WebullDataClient` polls the
 snapshot, tick, and bar endpoints every `poll_interval_secs` (default 5) for
-the instruments subscribed through the engine. Instruments must already be
-loaded in the cache (the venue exposes no instrument discovery endpoint);
-quote and trade subscriptions deliver ticks continuously, and bar
+the instruments subscribed through the engine. The Rust
+`WebullInstrumentProvider` can load stock and crypto instruments over REST, but
+it is not registered on the live data client and is not exposed to Python, so
+live subscriptions still need those instruments already loaded in the cache.
+Quote and trade subscriptions deliver ticks continuously, and bar
 subscriptions deliver each completed bar of a supported timespan.
 
 ```python
@@ -112,19 +116,29 @@ python examples/backtest/equity_ema_cross_aapl_webull.py
 ## Sandbox
 
 Webull publishes a test environment at `api.sandbox.webull.com`. Live smoke
-tests against it are in
-[`python/tests/integration/adapters/webull/test_webull_sandbox.py`](https://github.com/Apro123/webull-nt-community/blob/master/python/tests/integration/adapters/webull/test_webull_sandbox.py);
-they skip unless sandbox app credentials are in the environment:
+tests against it run only when sandbox app credentials are in the environment,
+and they do not send the production 2FA access token.
+
+The historical client bindings are covered by
+[`python/tests/integration/adapters/webull/test_webull_sandbox.py`](https://github.com/Apro123/webull-nt-community/blob/master/python/tests/integration/adapters/webull/test_webull_sandbox.py):
 
 ```bash
 WEBULL_API_KEY=... WEBULL_API_SECRET=... \
 uv run --project python pytest python/tests/integration/adapters/webull -v
 ```
 
+The instrument provider is Rust-only. Its sandbox load is
+[`crates/adapters/webull/tests/integration/sandbox.rs`](https://github.com/Apro123/webull-nt-community/blob/master/crates/adapters/webull/tests/integration/sandbox.rs).
+With the variables unset the test returns immediately, so `cargo test` and
+`make pre-flight` stay independent of the sandbox:
+
+```bash
+WEBULL_API_KEY=... WEBULL_API_SECRET=... \
+cargo test -p nautilus-webull --test integration sandbox
+```
+
 Each call is retried up to three times with exponential backoff (the sandbox
-is shared and intermittently unavailable). Unlike the official adapters, whose
-credential-consuming smoke tests are Rust `#[ignore]` tests, these live in
-Python so they exercise the same bindings users do.
+is shared and intermittently unavailable).
 
 ## Limitations
 

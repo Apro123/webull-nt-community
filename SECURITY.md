@@ -94,11 +94,19 @@ The sections below detail the controls at each layer of that lifecycle.
   to a 3-day cooldown and cargo-vet review, and every Make target that compiles Rust checks the
   resolved lockfiles first. Resolved crates.io publication dates are committed in
   `.supply-chain/crate-dates.json` so the check can run without registry access; dates a branch adds
-  beyond `origin/develop` are re-verified against crates.io, locally and in the CI pre-commit job.
+  beyond `origin/master` are re-verified against crates.io, locally and in the CI pre-commit job.
   A security fix or critical bug fix may bypass either cooldown after explicit review. These windows give the
   community time to detect and quarantine compromised releases. Development tools are pinned to
   explicit versions across `.nautilus-engineering/tools.toml`, `tools.toml`, `Cargo.toml`, and
   related manifests, and version bumps are reviewed during security audits.
+- **Reviewed GitHub Actions cooldown exception**: `step-security/harden-runner` v2.22.3 at commit
+  `46b06cea07f9e64621fdf066ba77ac6915163d43` is approved before the normal 14-day window.
+  The [release](https://github.com/step-security/harden-runner/releases/tag/v2.22.3) fixes GitHub's
+  DNS/proxy experiment blocking allowed connections.
+  Repeated failures prevent CI and release recovery, which justifies early adoption. The review covers
+  the DNS/proxy fix and verifies published Linux agent checksums. Only this commit's age check is exempt;
+  tag/SHA validation, release metadata checks, egress block mode, and endpoint allowlists remain enforced.
+  All other commits retain the 14-day cooldown.
 - **Container image cooldowns**: Require images to be at least 7 days old unless an exception is
   explicitly reviewed. Measure age from `created` in the image configuration for the exact
   pinned digest, not the bundled software release date or tag update time. For multi-architecture indexes,
@@ -147,8 +155,9 @@ The sections below detail the controls at each layer of that lifecycle.
   manifest as the anchor for downstream registry verification while staying compatible with GitHub
   release immutability.
 - **Deployment environments**: Release and package publishing jobs use scoped GitHub deployment
-  environments (`release`, `r2-develop`, and `r2-nightly`) so publishing credentials and OIDC
-  trusted-publisher identities stay isolated from test, lint, and build-only jobs.
+  environments (`release`, `r2-develop`, and `r2-nightly`). Security override checks share the R2
+  environments to read override variables but do not reference publishing credentials. Test, lint,
+  and build-only jobs do not use these environments.
 - **Publish authentication**: PyPI and crates.io uploads use Trusted Publishing (OIDC) bound to the
   `release` GitHub Environment, eliminating long-lived API tokens. Each publish mints a short-lived
   token scoped to the specific repo, workflow, and environment.
